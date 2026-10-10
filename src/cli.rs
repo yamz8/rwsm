@@ -447,6 +447,20 @@ pub enum AuxAction {
             stop\tdaemon is stopped"
     )]
     AppDaemon,
+
+    /// Internal: waits for the compositor to export its environment and
+    /// notifies readiness (forked off by `aux exec`, not part of uwsm's CLI).
+    #[command(hide = true)]
+    Autoready {
+        #[arg(long)]
+        main_pid: i32,
+
+        #[arg(value_name = "ID")]
+        wm_id: String,
+
+        #[arg(value_name = "ID_UNIT_STRING")]
+        id_unit_string: String,
+    },
 }
 
 /// Terminal options pulled out of `app -T ... --` before parsing (spec §2.5, P-CLI-APP-T).
