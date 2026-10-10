@@ -9,8 +9,10 @@ are reused as is so plugins and unit behavior stay identical.
 - `libexec/`: `prepare-env.sh` (environment loader, plugin API) and
   `signal-handler.sh` (start-time signal handling).
 - `plugins/`: compositor plugins, installed to `$datadir/uwsm/plugins/`.
+- `scripts/`: `uwsm-app` (app daemon client, also installed as the
+  `uwsm-terminal*` symlinks), `uuctl` and `wait-tray`.
 - `systemd/user/`: static units; `*.in` files get `@BIN_PATH@`, `@BIN_NAME@`
   and `@WAITPID_BIN@` substituted at install time (see `Makefile`).
 
-The optional uwsm extras (`fumon`, `ttyautolock`, `uuctl`, `wait-tray`,
-`uwsm-app`) are not vendored yet.
+The optional `fumon` and `ttyautolock` extras (and their units) are not
+vendored yet.

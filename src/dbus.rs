@@ -29,6 +29,7 @@ pub struct Bus {
 }
 
 /// One row of `ListUnitsByPatterns`.
+#[allow(dead_code)] // full row kept for debug output
 #[derive(Debug, Clone)]
 pub struct UnitInfo {
     pub name: String,
@@ -39,6 +40,7 @@ pub struct UnitInfo {
 }
 
 /// One row of `ListJobs`.
+#[allow(dead_code)] // full row kept for debug output
 #[derive(Debug, Clone)]
 pub struct JobInfo {
     pub id: u32,

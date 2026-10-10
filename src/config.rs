@@ -25,9 +25,6 @@ pub const PKG_LIBEXEC_DIR: &str = build_env!("UWSM_LIBEXEC_DIR", "/usr/libexec/u
 /// POSIX shell used to run the libexec scripts.
 pub const SH_BIN: &str = build_env!("UWSM_SH_BIN", "sh");
 
-/// `waitpid` binary used by `wayland-session-bindpid@.service`.
-pub const WAITPID_BIN: &str = build_env!("UWSM_WAITPID_BIN", "waitpid");
-
 /// `whiptail` binary used by `uwsm select`.
 pub const WHIPTAIL_BIN: &str = build_env!("UWSM_WHIPTAIL_BIN", "whiptail");
 

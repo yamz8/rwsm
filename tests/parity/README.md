@@ -12,6 +12,11 @@ throwaway root container and diffs what they do.
    whole session (start, finalize from the stand-in compositor, is-active,
    stop) and compares units, activation environment and cleanup.
 
+5. `daemon.sh pyuwsm` then `daemon.sh uwsm` runs the app daemon as a transient
+   unit, sends it requests through the FIFOs and saves the replies.
+6. For `app`, put a fake `systemd-run` that prints its arguments first in
+   `PATH` (`cmp.sh` prepends `$SHIM` when set) so nothing is launched.
+
 Known noise: `pyuwsm` adds `PYTHONPATH` and `LC_CTYPE` to the exported
 environment, PIDs differ, and argparse usage errors are worded differently
 from clap's (both exit 2).

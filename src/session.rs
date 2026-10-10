@@ -669,10 +669,7 @@ pub fn aux(action: AuxAction) -> Result<Code> {
             std::thread::sleep(env::settle_time(""));
             Ok(0)
         }
-        AuxAction::AppDaemon => {
-            output::error("rwsm: \"aux app-daemon\" is not implemented yet");
-            Ok(1)
-        }
+        AuxAction::AppDaemon => crate::app::app_daemon(),
         AuxAction::Autoready { .. } => unreachable!("handled before the aux guard"),
     }
 }
@@ -846,4 +843,228 @@ mod tests {
         );
         assert_eq!(extract_wm_id(""), "");
     }
+}
+
+/// Outcome of the may-start checks: errors, visible and silent dealbreakers.
+#[derive(Default)]
+struct MayStart {
+    errors: Vec<String>,
+    visible: Vec<String>,
+    silent: Vec<String>,
+}
+
+impl MayStart {
+    fn add(list: &mut Vec<String>, msg: String) {
+        if !list.contains(&msg) {
+            list.push(msg);
+        }
+    }
+
+    fn error(&mut self, msg: &str, e: impl std::fmt::Display) {
+        // uwsm adds these with set.update(), scattering the characters (spec §8.6).
+        Self::add(&mut self.errors, msg.to_string());
+        Self::add(&mut self.errors, e.to_string());
+    }
+
+    fn silent(&mut self, msg: String) {
+        Self::add(&mut self.silent, msg);
+    }
+}
+
+fn check_may_start_inner(args: &cli::MayStartArgs) -> MayStart {
+    let mut r = MayStart::default();
+    let verbose = args.verbose;
+
+    if unsafe { libc::geteuid() } == 0 {
+        r.silent("Running as root".into());
+        return r;
+    }
+    if std::env::var("DBUS_SESSION_BUS_ADDRESS")
+        .unwrap_or_default()
+        .is_empty()
+    {
+        r.silent("DBUS_SESSION_BUS_ADDRESS is not available".into());
+        return r;
+    }
+
+    if !args.nologin {
+        let ppid = std::os::unix::process::parent_id();
+        match std::fs::read(format!("/proc/{ppid}/cmdline")) {
+            Ok(raw) => {
+                let cmdline = String::from_utf8_lossy(&raw);
+                debug!("parent_pid: {ppid}");
+                debug!("parent_cmdline: {}", cmdline.trim());
+                if !cmdline.trim().starts_with('-') {
+                    r.silent("Not in login shell".into());
+                    if !verbose {
+                        return r;
+                    }
+                }
+            }
+            Err(e) => {
+                r.error("Could not determine parent process command!", e);
+                return r;
+            }
+        }
+    }
+
+    match is_active(ActiveCheck::Generic, false, false) {
+        Ok(true) => {
+            MayStart::add(
+                &mut r.visible,
+                "A compositor and/or graphical-session* targets are already active".into(),
+            );
+            if !verbose {
+                return r;
+            }
+        }
+        Ok(false) => {}
+        Err(e) => {
+            r.error("Could not check for active compositor!", format!("{e:#}"));
+            return r;
+        }
+    }
+
+    let allowed = args.allowed_vtnr();
+    let allowed_str = allowed
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join("|");
+    debug!("allowed_vtnr {allowed:?}");
+    let check_vt = allowed != [0];
+    if check_vt {
+        match env::get_fg_vt() {
+            None => {
+                r.silent("Could not determine foreground VT".into());
+                if !verbose {
+                    return r;
+                }
+            }
+            Some(fgvt) if !allowed.contains(&fgvt) => {
+                r.silent(format!(
+                    "Foreground VT ({fgvt}) is not among allowed VTs ({allowed_str})"
+                ));
+                if !verbose {
+                    return r;
+                }
+            }
+            Some(_) => {}
+        }
+    }
+
+    let session_id = std::env::var("XDG_SESSION_ID").unwrap_or_default();
+    if check_vt {
+        if session_id.is_empty() {
+            r.silent("XDG_SESSION_ID is not available".into());
+            if !verbose {
+                return r;
+            }
+        } else {
+            match Bus::system().and_then(|bus| bus.get_session_property_u32(&session_id, "VTNr")) {
+                Ok(0) => {
+                    r.silent(format!("Session {session_id} is not associated with a VT"));
+                    if !verbose {
+                        return r;
+                    }
+                }
+                Ok(vtnr) => {
+                    debug!("session_vtnr {vtnr}");
+                    if !allowed.contains(&vtnr) {
+                        r.silent(format!(
+                            "Session VT ({vtnr}) is not among allowed VTs ({allowed_str})"
+                        ));
+                        if !verbose {
+                            return r;
+                        }
+                    }
+                }
+                Err(e) => {
+                    r.error("Could not get session VTNr!", format!("{e:#}"));
+                    return r;
+                }
+            }
+        }
+    }
+
+    if !args.allow_remote {
+        if session_id.is_empty() {
+            r.silent("XDG_SESSION_ID is not available".into());
+            if !verbose {
+                return r;
+            }
+        } else {
+            match Bus::system().and_then(|bus| bus.get_session_property_bool(&session_id, "Remote"))
+            {
+                Ok(true) => {
+                    r.silent(format!("Session {session_id} is not local"));
+                    if !verbose {
+                        return r;
+                    }
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    r.error("Could not get session Remote attr!", format!("{e:#}"));
+                    return r;
+                }
+            }
+        }
+    }
+
+    if args.gst_seconds > 0 {
+        let reached = Bus::system().and_then(|bus| {
+            wait_for_unit(
+                "graphical.target",
+                bus,
+                args.gst_seconds,
+                &["active", "activating"],
+                args.quiet,
+            )
+        });
+        match reached {
+            Ok(true) => {}
+            Ok(false) => {
+                r.silent("System has not reached graphical.target".into());
+                if !verbose {
+                    return r;
+                }
+            }
+            Err(e) => {
+                r.error(
+                    "Could not check if graphical.target is reached!",
+                    format!("{e:#}"),
+                );
+                return r;
+            }
+        }
+    }
+    r
+}
+
+/// `uwsm check may-start` (spec §8.6).
+pub fn check_may_start(args: cli::MayStartArgs) -> Result<Code> {
+    let r = check_may_start_inner(&args);
+    if r.errors.is_empty() && r.visible.is_empty() && r.silent.is_empty() {
+        if args.verbose {
+            output::ok("May start compositor.");
+        }
+        return Ok(0);
+    }
+    if !r.errors.is_empty() {
+        let mut lines = vec!["Got errors while checking if may start compositor:".to_string()];
+        lines.extend(r.errors);
+        output::error(&lines.join("\n"));
+    }
+    if r.visible.is_empty() && r.silent.is_empty() {
+        return Ok(1);
+    }
+    if args.verbose {
+        let mut lines = vec!["May not start compositor:".to_string()];
+        lines.extend(r.visible);
+        lines.extend(r.silent);
+        output::warning(&lines.join("\n  "));
+    } else if !args.quiet && !r.visible.is_empty() {
+        output::warning(&r.visible.join("\n"));
+    }
+    Ok(1)
 }

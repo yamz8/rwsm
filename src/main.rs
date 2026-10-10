@@ -2,10 +2,7 @@
 //!
 //! See `docs/uwsm-parity-spec.md` for the behavior this binary must match.
 
-// Helpers are ported ahead of the subcommands that use them; drop this once
-// every subcommand is wired up.
-#![allow(dead_code)]
-
+mod app;
 mod cli;
 mod comp;
 mod config;
@@ -30,7 +27,7 @@ use cli::{AuxAction, Checker, Cli, Mode};
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().collect();
     let argv0 = args.remove(0);
-    let _terminal_opts = cli::extract_terminal_opts(&mut args);
+    let terminal_opts = cli::extract_terminal_opts(&mut args);
     let cli = Cli::parse_from(std::iter::once(argv0).chain(args));
 
     // The readiness helper is forked off by `aux exec`, not by the manager.
@@ -69,13 +66,10 @@ fn main() -> ExitCode {
             checker: Checker::IsActive { wm, verbose },
         } => session::check_is_active(wm, verbose),
         Mode::Aux { action } => session::aux(action),
-        Mode::App(_)
-        | Mode::Check {
-            checker: Checker::MayStart(_),
-        } => {
-            eprintln!("rwsm: this subcommand is not implemented yet");
-            Ok(1)
-        }
+        Mode::Check {
+            checker: Checker::MayStart(a),
+        } => session::check_may_start(a),
+        Mode::App(a) => Ok(app::app_main(a, terminal_opts)),
     };
     match result {
         Ok(code) => ExitCode::from(code),

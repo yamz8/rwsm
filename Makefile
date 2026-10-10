@@ -20,7 +20,6 @@ LIBEXEC_DIR = $(LIBEXECDIR)/uwsm
 
 export UWSM_BIN_PATH = $(BIN_PATH)
 export UWSM_LIBEXEC_DIR = $(LIBEXEC_DIR)
-export UWSM_WAITPID_BIN = $(WAITPID_BIN)
 
 .PHONY: all build install clean
 
@@ -43,6 +42,13 @@ install: build
 		*) install -m644 "$$f" $(DESTDIR)$(UNITDIR)/ ;; \
 		esac; \
 	done
+	install -Dm755 data/scripts/uwsm-app.sh $(DESTDIR)$(BINDIR)/uwsm-app
+	for l in uwsm-terminal uwsm-terminal-service uwsm-terminal-scope; do \
+		ln -sf uwsm-app $(DESTDIR)$(BINDIR)/$$l; \
+	done
+	install -Dm755 data/scripts/uuctl.sh $(DESTDIR)$(BINDIR)/uuctl
+	install -Dm644 data/scripts/uuctl.desktop $(DESTDIR)$(DATADIR)/applications/uuctl.desktop
+	install -Dm755 data/scripts/wait-tray.sh $(DESTDIR)$(BINDIR)/wait-tray
 	install -Dm644 data/LICENSE.uwsm $(DESTDIR)$(DATADIR)/licenses/rwsm/LICENSE.uwsm
 
 clean:

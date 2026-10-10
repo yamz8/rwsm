@@ -23,6 +23,6 @@ jobs:
       - name: Test
         run: cargo test
       - name: Shell syntax of vendored scripts
-        run: for f in data/libexec/*.sh data/plugins/*.sh; do sh -n "$f"; done
+        run: for f in data/libexec/*.sh data/plugins/*.sh data/scripts/*.sh; do sh -n "$f"; done
       - name: Install into staging dir
         run: make install DESTDIR="$PWD/stage" && find stage -type f | sort
