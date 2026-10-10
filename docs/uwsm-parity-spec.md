@@ -995,6 +995,7 @@ The rwsm repo carries these templates and installs them unchanged.
 | Q8 | `%%f` yields a literal `%f` | Keep |
 | Q9 | `get_active_wm_unit` warning joins dbus structs | Fix the message |
 | Q10 | `aux waitenv` declares its names with `type=list`, so any name passed on the command line becomes a list of characters and crashes the filter (the unit never passes names) | Fix: accept plain names |
+| Q11 | `-U home` creates the unit dir with `os.mkdir`, so `start` crashes with "No such file or directory" when `~/.config/systemd` does not exist yet | Fix: create missing parents |
 
 ## 12. Parity checklist
 

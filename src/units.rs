@@ -354,9 +354,9 @@ impl UnitFiles {
         } else {
             output::normal("Reloading systemd user manager.");
             let bus = Bus::session()?;
-            let job = bus.reload()?;
-            bus.wait_for_job(&job)?;
-            debug!("reload systemd job {job} finished");
+            // Reload is synchronous and returns no job.
+            bus.reload()?;
+            debug!("reload systemd finished");
         }
         self.changed = false;
         Ok(())

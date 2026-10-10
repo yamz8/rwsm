@@ -134,7 +134,7 @@ impl Bus {
     }
 
     /// `Manager.Reload()`, returns the job path.
-    pub fn reload(&self) -> Result<OwnedObjectPath> {
+    pub fn reload(&self) -> Result<()> {
         Ok(self.manager()?.call("Reload", &())?)
     }
 

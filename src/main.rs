@@ -50,10 +50,13 @@ fn main() -> ExitCode {
         output::warning(w);
     }
 
+    if let Mode::Aux { .. } = cli.mode {
+        output::set_prefix(true);
+    }
     if let Mode::Aux { .. } = cli.mode
         && !called_by_systemd_manager()
     {
-        eprintln!("Aux actions can only be run by systemd user manager!");
+        output::error("Aux actions can only be run by systemd user manager!");
         return ExitCode::from(1);
     }
 

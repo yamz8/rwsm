@@ -270,7 +270,7 @@ pub fn start(mut args: StartArgs) -> Result<Code> {
                         "System has not reached graphical.target.\n\
                          It might be a good idea to check default system target or screen for this\n\
                          with a condition, i.e. via \"uwsm check may-start\".\n\
-                         Will continue in 5 seconds...",
+                         Will continue in 5 seconds...\n",
                     );
                     std::thread::sleep(Duration::from_secs(5));
                 }
@@ -305,7 +305,8 @@ pub fn start(mut args: StartArgs) -> Result<Code> {
         hardcode: args.hardcode,
     })?;
 
-    output::normal(&format!(
+    // uwsm's dedent() trims the end of the block but keeps one newline.
+    let summary = format!(
         "Selected compositor ID: {}\n          Command Line: {}\n      Plugin/binary ID: {}\n Initial Desktop Names: {}\n                  Name: {}\n           Description: {}",
         comp.id,
         shlex_join(&comp.cmdline),
@@ -313,7 +314,8 @@ pub fn start(mut args: StartArgs) -> Result<Code> {
         comp.desktop_names.join(":"),
         comp.name,
         comp.description
-    ));
+    );
+    output::normal(&format!("{}\n", summary.trim_end()));
 
     if is_active(ActiveCheck::Generic, false, true)? {
         output::error("A compositor or graphical-session* target is already active!");
