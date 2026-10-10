@@ -994,6 +994,7 @@ The rwsm repo carries these templates and installs them unchanged.
 | Q7 | App daemon ignores `-S` | Keep for parity, or fix (low risk) |
 | Q8 | `%%f` yields a literal `%f` | Keep |
 | Q9 | `get_active_wm_unit` warning joins dbus structs | Fix the message |
+| Q10 | `aux waitenv` declares its names with `type=list`, so any name passed on the command line becomes a list of characters and crashes the filter (the unit never passes names) | Fix: accept plain names |
 
 ## 12. Parity checklist
 

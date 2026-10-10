@@ -1,0 +1,16 @@
+[Unit]
+Description=Bind graphical session to PID %i
+Documentation=man:uwsm(1)
+OnSuccess=wayland-session-shutdown.target
+OnSuccessJobMode=replace-irreversibly
+OnFailure=wayland-session-shutdown.target
+OnFailureJobMode=replace-irreversibly
+Conflicts=wayland-session-shutdown.target
+Before=wayland-session-shutdown.target
+CollectMode=inactive-or-failed
+[Service]
+Type=exec
+ExecStart=/bin/sh -c "if command -v @WAITPID_BIN@ >/dev/null; then exec @WAITPID_BIN@ -e %i; else exec @BIN_PATH@ aux waitpid %i; fi" waitpid
+Restart=no
+SyslogIdentifier=@BIN_NAME@_bindpid
+Slice=background.slice
