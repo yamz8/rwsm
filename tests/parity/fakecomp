@@ -1,0 +1,5 @@
+#!/bin/sh
+# Stand-in compositor: "creates" a display, exports it, then idles.
+echo "fakecomp started: $*"
+WAYLAND_DISPLAY=wayland-fake FAKECOMP_VAR=yes uwsm finalize FAKECOMP_VAR
+exec sleep infinity

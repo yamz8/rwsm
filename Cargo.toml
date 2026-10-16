@@ -1,0 +1,25 @@
+[package]
+name = "rwsm"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Rust rewrite of uwsm, the Universal Wayland Session Manager"
+license = "MIT"
+repository = "https://github.com/yamz8/rwsm"
+publish = false
+
+# Installed as `uwsm` so it is a drop-in replacement for the Python original:
+# units, desktop entries and shell profiles keep calling `uwsm`.
+[[bin]]
+name = "uwsm"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4", features = ["derive"] }
+libc = "0.2.190"
+zbus = { version = "5", features = ["blocking-api"] }
+
+[profile.release]
+lto = true
+codegen-units = 1

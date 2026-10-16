@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Fake Compositor
+Comment=Test stand-in
+Exec=fakecomp --flag
+Type=Application
+DesktopNames=Fake
