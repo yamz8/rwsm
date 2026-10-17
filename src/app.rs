@@ -1256,4 +1256,99 @@ mod tests {
         assert!(gen_entry_args(&entry("sh %f %u"), &[], None).is_err());
         assert!(gen_entry_args(&entry("sh x%F"), &[], None).is_err());
     }
+
+    /// Expected values from uwsm's unit name trimming loop.
+    #[test]
+    fn unit_name_trimming() {
+        for (part, fixed, limit, expected) in [
+            ("abcdef", 2, 6, "abcd"),
+            ("ab\\x2dcd", 2, 6, "ab"),
+            ("ab\\x2dcd", 1, 8, "ab\\x2dc"),
+            ("\\x2d\\x2d\\x2d", 0, 9, "\\x2d\\x2d"),
+            ("a\\x2db\\x2dc", 3, 10, "a\\x2db"),
+            ("plain", 0, 100, "plain"),
+        ] {
+            assert_eq!(trim_escaped(part, fixed, limit), expected, "{part}");
+        }
+        let long = "n-".repeat(140);
+        for unit_type in [AppUnitType::Scope, AppUnitType::Service] {
+            let name = gen_unit_name(&long, "x", unit_type);
+            assert!(name.len() <= 255, "{}", name.len());
+            assert!(name.starts_with("app-"));
+            assert!(name.ends_with(unit_type.as_str()));
+        }
+    }
+
+    #[test]
+    fn terminal_list_lines() {
+        let mut cfg = TerminalConfig::default();
+        for line in [
+            "# comment",
+            "",
+            "foot.desktop",
+            "foot.desktop",
+            "kitty.desktop:new",
+            "-xterm.desktop",
+            "+xterm.desktop",
+            "+alacritty.desktop",
+            "-alacritty.desktop",
+            "-foo.desktop:act",
+            "/execarg_default:foot.desktop:-e",
+            "/execarg_default:foot.desktop:--other",
+            "/path/x.desktop",
+            "1bad.desktop",
+            "garbage",
+        ] {
+            parse_terminal_line(&mut cfg, line);
+        }
+        assert_eq!(
+            cfg.explicit,
+            vec![
+                ("foot.desktop".to_string(), None),
+                ("kitty.desktop".to_string(), Some("new".to_string()))
+            ]
+        );
+        assert_eq!(cfg.excluded, s(&["xterm.desktop"]));
+        assert_eq!(cfg.unexcluded, s(&["alacritty.desktop"]));
+        assert_eq!(cfg.default_execargs.len(), 1);
+        assert_eq!(cfg.default_execargs["foot.desktop"], "-e");
+    }
+
+    #[test]
+    fn neg_cache_floats_like_python() {
+        assert_eq!(py_float(1700000000.0), "1700000000.0");
+        assert_eq!(py_float(1712345678.123456), "1712345678.123456");
+        assert_eq!(py_float(0.5), "0.5");
+    }
+
+    /// Replies recorded from Python uwsm's app daemon. Service units are left
+    /// out: their --setenv arguments depend on the session environment.
+    #[test]
+    fn daemon_replies_match_uwsm() {
+        let app = |args: &[&str]| daemon_reply(s(&[&["app"], args].concat()));
+        assert_eq!(
+            app(&["-u", "my-unit.scope", "--", "sh", "-c", "echo 'hi'"]),
+            "exec systemd-run --user --scope --slice=app-graphical.slice \
+             --unit=my-unit.scope --description=sh --quiet --collect --same-dir \
+             -- sh -c 'echo '\"'\"'hi'\"'\"''"
+        );
+        assert_eq!(
+            app(&["-s", "b", "-u", "x.scope", "-d", "my desc", "--", "sh"]),
+            "exec systemd-run --user --scope --slice=background-graphical.slice \
+             --unit=x.scope '--description=my desc' --quiet --collect --same-dir -- sh"
+        );
+        assert_eq!(
+            app(&["-u", "x.scope", "--", "nonexistent-binary-xyz"]),
+            "error 'Error: Command not found: \"nonexistent-binary-xyz\"' 1"
+        );
+        assert_eq!(
+            app(&["-s", "bogus", "--", "sh"]),
+            "error 'Error: Invalid slice name: bogus!' 1"
+        );
+        assert_eq!(
+            app(&["-t", "service", "-u", "bad.scope", "--", "sh"]),
+            "error 'Error: Only \".service\" is supported as unit suffix for service unit type' 1"
+        );
+        assert_eq!(app(&["-x", "sh"]), "error 'Invalid arguments: app -x sh' 2");
+    }
 }
