@@ -5,54 +5,87 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 
+use crate::escape::py_repr;
 use crate::misc::sane_split;
-use crate::xdg;
+use crate::{debug, xdg};
 
 const MAIN_GROUP: &str = "Desktop Entry";
 
-/// Keys pyxdg knows for the main group. Other keys that are not `X-`
-/// prefixed produce an `Invalid key: K` validation error, as in pyxdg.
-const KNOWN_KEYS: &[&str] = &[
-    "Type",
-    "Version",
-    "Name",
-    "GenericName",
-    "NoDisplay",
-    "Comment",
-    "Icon",
-    "Hidden",
-    "OnlyShowIn",
-    "NotShowIn",
-    "TryExec",
-    "Exec",
-    "Path",
-    "Terminal",
-    "MimeType",
-    "Categories",
-    "StartupNotify",
-    "StartupWMClass",
-    "URL",
-    "Actions",
-    "Keywords",
-    "Implements",
-    // deprecated keys pyxdg only warns about
-    "Encoding",
-    "MiniIcon",
-    "TerminalOptions",
-    "DefaultApp",
-    "Protocols",
-    "Extensions",
-    "BinaryPattern",
-    "MapNotify",
-    "SwallowTitle",
-    "SwallowExec",
-    "SortOrder",
-    "FilePattern",
-];
+/// How pyxdg's `checkValue` checks a key's value.
+#[derive(Clone, Copy, PartialEq)]
+enum Check {
+    /// Not checked (`localestring`, or no `checkValue` call).
+    None,
+    /// Must be ASCII.
+    Str,
+    /// `true` or `false` (`1`/`0` are only deprecated).
+    Bool,
+    /// Parses as a float.
+    Numeric,
+}
 
-const BOOLEAN_KEYS: &[&str] = &["NoDisplay", "Hidden", "Terminal", "StartupNotify"];
+/// pyxdg's `DesktopEntry.checkKey` table: key, whether it takes a locale
+/// suffix, the value check, whether the value is a list, and the `Type` the
+/// key is restricted to. Keys not listed (and not `X-*`) are invalid.
+/// `URL` really is restricted to `Type=URL` in pyxdg.
+const KEYS: &[(&str, bool, Check, bool, Option<&str>)] = &[
+    ("Version", false, Check::Str, false, None),
+    ("Name", true, Check::None, false, None),
+    ("GenericName", true, Check::None, false, None),
+    ("NoDisplay", false, Check::Bool, false, None),
+    ("Comment", true, Check::None, false, None),
+    ("Icon", true, Check::Str, false, None),
+    ("Hidden", false, Check::Bool, false, None),
+    ("OnlyShowIn", false, Check::Str, true, None),
+    ("NotShowIn", false, Check::Str, true, None),
+    ("TryExec", false, Check::Str, false, Some("Application")),
+    ("Exec", false, Check::Str, false, Some("Application")),
+    ("Path", false, Check::Str, false, Some("Application")),
+    ("Terminal", false, Check::Bool, false, Some("Application")),
+    ("Actions", false, Check::Str, true, Some("Application")),
+    ("MimeType", false, Check::Str, true, Some("Application")),
+    ("Categories", false, Check::Str, false, Some("Application")),
+    ("Keywords", true, Check::None, true, Some("Application")),
+    (
+        "StartupNotify",
+        false,
+        Check::Bool,
+        false,
+        Some("Application"),
+    ),
+    (
+        "StartupWMClass",
+        false,
+        Check::None,
+        false,
+        Some("Application"),
+    ),
+    ("URL", false, Check::Str, false, Some("URL")),
+    ("ServiceTypes", false, Check::Str, true, None),
+    ("DocPath", false, Check::Str, false, None),
+    ("InitialPreference", false, Check::Numeric, false, None),
+    ("Dev", false, Check::Str, false, Some("FSDevice")),
+    ("FSType", false, Check::Str, false, Some("FSDevice")),
+    ("MountPoint", false, Check::Str, false, Some("FSDevice")),
+    ("ReadOnly", false, Check::Bool, false, Some("FSDevice")),
+    ("UnmountIcon", true, Check::Str, false, Some("FSDevice")),
+    // deprecated keys pyxdg only warns about
+    ("Encoding", false, Check::Str, false, None),
+    ("MiniIcon", true, Check::Str, false, None),
+    ("TerminalOptions", false, Check::Str, false, None),
+    ("DefaultApp", false, Check::Str, false, None),
+    ("Protocols", false, Check::Str, true, None),
+    ("Extensions", false, Check::Str, true, None),
+    ("BinaryPattern", false, Check::Str, false, None),
+    ("MapNotify", false, Check::Str, false, None),
+    ("SwallowTitle", true, Check::None, false, None),
+    ("SwallowExec", false, Check::Str, false, None),
+    // checked as a regex by pyxdg; any value is accepted here
+    ("FilePattern", false, Check::None, true, None),
+    ("SortOrder", false, Check::Str, true, None),
+];
 
 /// Validation errors uwsm tolerates (spec §6.1).
 const TOLERATED_ERRORS: &[&str] = &[
@@ -70,30 +103,48 @@ pub struct DesktopEntry {
     pub path: PathBuf,
     /// Group name to key/value pairs, in file order.
     groups: Vec<(String, Vec<(String, String)>)>,
-    /// Problems found while parsing, reported by [`DesktopEntry::validation_errors`].
-    parse_errors: Vec<String>,
 }
 
 impl DesktopEntry {
     pub fn load(path: &Path) -> Result<Self> {
-        let text = fs::read_to_string(path)
-            .with_context(|| format!("Could not read \"{}\"", path.display()))?;
-        Self::parse(path, &text)
+        let bytes =
+            fs::read(path).with_context(|| format!("Could not read \"{}\"", path.display()))?;
+        // pyxdg decodes with errors='replace', so legacy encodings still load.
+        Self::parse(path, &String::from_utf8_lossy(&bytes))
     }
 
+    /// Loads an entry; on failure only `message` is reported, as uwsm does
+    /// (the cause is shown with debug output).
+    pub fn load_or(path: &Path, message: impl FnOnce() -> String) -> Result<Self> {
+        Self::load(path).map_err(|e| {
+            debug!("{e:#}");
+            anyhow!(message())
+        })
+    }
+
+    /// Parses like pyxdg's `IniFile.parse` with debug off: a repeated key
+    /// overwrites the earlier value and a repeated group header empties the
+    /// group.
     pub fn parse(path: &Path, text: &str) -> Result<Self> {
         let mut groups: Vec<(String, Vec<(String, String)>)> = Vec::new();
-        let mut parse_errors = Vec::new();
+        let mut current: Option<usize> = None;
         for (lineno, raw) in text.lines().enumerate() {
             let line = raw.trim();
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
-            if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
-                if groups.iter().any(|(g, _)| g == name) {
-                    parse_errors.push(format!("Duplicate group: {name}"));
-                }
-                groups.push((name.to_string(), Vec::new()));
+            if line.starts_with('[') {
+                let name = line.trim_start_matches('[').trim_end_matches(']');
+                current = Some(match groups.iter().position(|(g, _)| g == name) {
+                    Some(i) => {
+                        groups[i].1.clear();
+                        i
+                    }
+                    None => {
+                        groups.push((name.to_string(), Vec::new()));
+                        groups.len() - 1
+                    }
+                });
                 continue;
             }
             let Some((key, value)) = line.split_once('=') else {
@@ -103,15 +154,16 @@ impl DesktopEntry {
                     path.display()
                 );
             };
-            let Some((_, entries)) = groups.last_mut() else {
+            let Some(i) = current else {
                 bail!("\"{}\" does not start with a group header", path.display());
             };
             let key = key.trim().to_string();
-            if entries.iter().any(|(k, _)| *k == key) {
-                parse_errors.push(format!("Duplicate key: {key}"));
-                continue;
+            let value = value.trim().to_string();
+            let entries = &mut groups[i].1;
+            match entries.iter_mut().find(|(k, _)| *k == key) {
+                Some(entry) => entry.1 = value,
+                None => entries.push((key, value)),
             }
-            entries.push((key, value.trim().to_string()));
         }
         if !groups.iter().any(|(g, _)| g == MAIN_GROUP) {
             bail!("\"{}\" has no [{MAIN_GROUP}] group", path.display());
@@ -119,7 +171,6 @@ impl DesktopEntry {
         Ok(Self {
             path: path.to_path_buf(),
             groups,
-            parse_errors,
         })
     }
 
@@ -222,47 +273,181 @@ impl DesktopEntry {
         }
     }
 
-    /// Errors in the style of pyxdg's `validate()`, for the checks uwsm relies on.
+    /// Errors as pyxdg's `validate()` reports them, in file order and without
+    /// duplicates (uwsm collects them in a set). pyxdg's warnings, such as a
+    /// missing `Exec`, are not reported: uwsm ignores them and checks what it
+    /// needs itself.
     pub fn validation_errors(&self) -> Vec<String> {
-        let mut errors = self.parse_errors.clone();
+        let mut errors: Vec<String> = Vec::new();
+        let mut push = |e: String| {
+            if !errors.contains(&e) {
+                errors.push(e);
+            }
+        };
         let main = self.group(MAIN_GROUP).unwrap_or_default();
         let has = |k: &str| main.iter().any(|(key, _)| key == k);
-        match self.get_raw("Type") {
-            None => errors.push("Key 'Type' is missing".into()),
-            Some("Application" | "Link" | "Directory") => {}
-            Some("ServiceType" | "Service" | "FSDevice") => {}
-            Some(other) => errors.push(format!("'{other}' is not a valid type")),
+        if !has("Type") {
+            push("Key 'Type' is missing".into());
         }
         if !has("Name") {
-            errors.push("Key 'Name' is missing".into());
+            push("Key 'Name' is missing".into());
         }
-        if self.get_raw("Type") == Some("Application") && !has("Exec") && !has("DBusActivatable") {
-            errors.push("Key 'Exec' is missing".into());
-        }
-        for (key, value) in main {
-            if key.starts_with("X-") {
-                continue;
+        let entry_type = self.get_raw("Type").unwrap_or("");
+        for (group, entries) in &self.groups {
+            let action_group = group.strip_prefix("Desktop Action ").is_some_and(|a| {
+                !a.is_empty() && a.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            });
+            if !(group == MAIN_GROUP
+                || action_group
+                || (group.starts_with("X-") && group.is_ascii()))
+            {
+                push(format!("Invalid Group name: {group}"));
+            } else if entries.iter().any(|(k, _)| k == "OnlyShowIn")
+                && entries.iter().any(|(k, _)| k == "NotShowIn")
+            {
+                push("Group may either have OnlyShowIn or NotShowIn, but not both".into());
             }
-            let base = key.split('[').next().unwrap_or(key);
-            if key.contains('[') {
-                if !KNOWN_KEYS.contains(&base) {
-                    errors.push(format!("Invalid key: {key}"));
-                }
-                continue;
-            }
-            if !KNOWN_KEYS.contains(&base) {
-                errors.push(format!("Invalid key: {key}"));
-            } else if BOOLEAN_KEYS.contains(&base) && value != "true" && value != "false" {
-                errors.push(format!("'{value}' is not a valid boolean"));
-            }
-        }
-        for action in self.actions() {
-            if !self.has_group(&format!("Desktop Action {action}")) {
-                errors.push(format!("Action group for action '{action}' is missing"));
+            for (key, value) in entries {
+                check_key(key, value, entry_type, &mut push);
             }
         }
         errors
     }
+}
+
+/// pyxdg's `DesktopEntry.checkKey`, errors only.
+fn check_key(key: &str, value: &str, entry_type: &str, push: &mut impl FnMut(String)) {
+    if key == "Type" {
+        if !matches!(
+            value,
+            "Application"
+                | "Link"
+                | "Directory"
+                | "ServiceType"
+                | "Service"
+                | "FSDevice"
+                | "MimeType"
+        ) {
+            push(format!(
+                "Value of key 'Type' must be Application, Link or Directory, but is '{value}'"
+            ));
+        }
+        return;
+    }
+    let known = KEYS.iter().find(|(name, locale, ..)| {
+        key == *name || (*locale && key.strip_prefix(name).is_some_and(is_locale_suffix))
+    });
+    let Some(&(_, _, check, list, only_type)) = known else {
+        if !is_x_key(key) {
+            push(format!("Invalid key: {key}"));
+        }
+        return;
+    };
+    let values = if list {
+        pyxdg_list(value)
+    } else {
+        vec![value.to_string()]
+    };
+    for v in values {
+        let valid = match check {
+            Check::None => true,
+            Check::Str => v.is_ascii(),
+            Check::Bool => matches!(v.as_str(), "true" | "false" | "1" | "0"),
+            Check::Numeric => is_python_float(&v),
+        };
+        if !valid {
+            let kind = match check {
+                Check::Bool => "boolean",
+                Check::Numeric => "numeric",
+                _ => "string",
+            };
+            push(format!("'{v}' is not a valid {kind}"));
+        }
+    }
+    if let Some(t) = only_type
+        && entry_type != t
+    {
+        push(format!("Key '{key}' only allowed in Type={t}"));
+    }
+}
+
+/// `xdg.Locale.regex`: `[lang_COUNTRY.ENCODING@MODIFIER]`, all parts but
+/// `lang` optional.
+fn is_locale_suffix(s: &str) -> bool {
+    let Some(inner) = s.strip_prefix('[').and_then(|s| s.strip_suffix(']')) else {
+        return false;
+    };
+    let alpha = |p: &str| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphabetic());
+    let (rest, modifier) = match inner.split_once('@') {
+        Some((r, m)) => (r, Some(m)),
+        None => (inner, None),
+    };
+    let (rest, encoding) = match rest.split_once('.') {
+        Some((r, e)) => (r, Some(e)),
+        None => (rest, None),
+    };
+    let (lang, country) = match rest.split_once('_') {
+        Some((l, c)) => (l, Some(c)),
+        None => (rest, None),
+    };
+    alpha(lang)
+        && country.is_none_or(alpha)
+        && encoding.is_none_or(|e| {
+            !e.is_empty() && e.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        })
+        && modifier.is_none_or(alpha)
+}
+
+/// `re.match("^X-[a-zA-Z0-9-]+", key)`: only the start has to match.
+fn is_x_key(key: &str) -> bool {
+    key.strip_prefix("X-")
+        .and_then(|r| r.chars().next())
+        .is_some_and(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
+/// pyxdg's `IniFile.getList`: splits on unescaped `;`, else `|`, else `,`,
+/// and drops one trailing empty item.
+fn pyxdg_list(value: &str) -> Vec<String> {
+    let unescaped = |sep: char| {
+        let mut prev = None;
+        value.chars().any(|c| {
+            let hit = c == sep && prev != Some('\\');
+            prev = Some(c);
+            hit
+        })
+    };
+    let Some(sep) = [';', '|', ','].into_iter().find(|&c| unescaped(c)) else {
+        return vec![value.to_string()];
+    };
+    let mut items = vec![String::new()];
+    let mut prev = None;
+    for c in value.chars() {
+        if c == sep && prev != Some('\\') {
+            items.push(String::new());
+        } else {
+            items.last_mut().unwrap().push(c);
+        }
+        prev = Some(c);
+    }
+    if items.last().is_some_and(String::is_empty) {
+        items.pop();
+    }
+    items
+}
+
+/// Whether Python's `float()` accepts the string.
+fn is_python_float(s: &str) -> bool {
+    let t = s.trim();
+    let t = if t.contains('_') {
+        // underscores are only allowed between digits
+        if t.starts_with('_') || t.ends_with('_') || t.contains("__") {
+            return false;
+        }
+        t.replace('_', "")
+    } else {
+        t.to_string()
+    };
+    !t.is_empty() && t.parse::<f64>().is_ok()
 }
 
 fn split_list(value: &str) -> Vec<String> {
@@ -374,7 +559,7 @@ pub fn tokenize_exec(value: &str) -> Result<Vec<String>> {
             } else if c == '\\' {
                 escaped = true;
             } else if c == '`' || c == '$' {
-                bail!("Encountered unescaped {c:?} in Exec");
+                bail!("Encountered unescaped {} in Exec", py_repr(&c.to_string()));
             } else {
                 arg.push(c);
             }
@@ -390,7 +575,7 @@ pub fn tokenize_exec(value: &str) -> Result<Vec<String>> {
             continue;
         }
         if "\t\n'\\><~|&;$*?#()`".contains(c) {
-            bail!("Encountered unquoted {c:?} in Exec");
+            bail!("Encountered unquoted {} in Exec", py_repr(&c.to_string()));
         }
         arg.push(c);
     }
@@ -507,9 +692,19 @@ impl DesktopEntry {
     }
 }
 
+/// uwsm's `^Invalid key: \\w+\\[.+\\]$`.
 fn is_invalid_locale_key_error(e: &str) -> bool {
-    e.strip_prefix("Invalid key: ")
-        .is_some_and(|k| k.contains('[') && k.ends_with(']'))
+    let Some((base, rest)) = e
+        .strip_prefix("Invalid key: ")
+        .and_then(|k| k.split_once('['))
+    else {
+        return false;
+    };
+    !base.is_empty()
+        && base.chars().all(|c| c.is_alphanumeric() || c == '_')
+        && rest.len() > 1
+        && rest.ends_with(']')
+        && !rest.contains('\n')
 }
 
 /// `^[a-zA-Z0-9_][a-zA-Z0-9_.-]*.desktop$` (the unescaped `.` matches any char).
@@ -610,11 +805,10 @@ pub fn find_entry_by_id(
             return Found::Drop;
         }
         Found::Return(
-            DesktopEntry::load(path)
-                .with_context(|| {
-                    format!("Failed to parse entry \"{id}\" from \"{}\"", path.display())
-                })
-                .and_then(|e| e.check_basic(action).map(|_| e)),
+            DesktopEntry::load_or(path, || {
+                format!("Failed to parse entry \"{id}\" from \"{}\"", path.display())
+            })
+            .and_then(|e| e.check_basic(action).map(|_| e)),
         )
     })
     .into_iter()
@@ -695,6 +889,114 @@ mod tests {
             "[Desktop Entry]\nType=Application\nName=x\nExec=sh -c true\nDesktopNames=a\nX-Foo=1\n",
         );
         ok.check_basic(None).unwrap();
+    }
+
+    /// Expected errors come from pyxdg 0.28's `validate()`, minus the
+    /// "is not a registered" ones rwsm doesn't produce (uwsm ignores them).
+    #[test]
+    fn validation_matches_pyxdg() {
+        let h = "[Desktop Entry]\nType=Application\nName=E\n";
+        let cases: &[(String, &[&str])] = &[
+            (format!("{h}Exec=a\nExec=b\n"), &[]),
+            (
+                format!("{h}Exec=a\n[Desktop Entry]\nType=Application\nName=F\nExec=b\n"),
+                &[],
+            ),
+            (
+                format!("{h}Exec=fakecomp ñ\n"),
+                &["'fakecomp ñ' is not a valid string"],
+            ),
+            (format!("{h}Exec=a\nTerminal=1\n"), &[]),
+            (
+                format!("{h}Exec=a\nImplements=org.foo\n"),
+                &["Invalid key: Implements"],
+            ),
+            (
+                format!("{h}Exec=a\nURL=http://x\n"),
+                &["Key 'URL' only allowed in Type=URL"],
+            ),
+            (
+                "[Desktop Entry]\nType=Bogus\nName=B\nExec=a\n".into(),
+                &[
+                    "Key 'Exec' only allowed in Type=Application",
+                    "Value of key 'Type' must be Application, Link or Directory, but is 'Bogus'",
+                ],
+            ),
+            (
+                format!("{h}Exec=a\nOnlyShowIn=GNOME;\nNotShowIn=KDE;\n"),
+                &["Group may either have OnlyShowIn or NotShowIn, but not both"],
+            ),
+            (
+                format!("{h}Exec=a\n[Bad Group]\nName=x\n"),
+                &["Invalid Group name: Bad Group"],
+            ),
+            (
+                format!("{h}Exec=a\nActions=a;b;\n[Desktop Action a]\nName=A\nExec=a\n"),
+                &[],
+            ),
+            (
+                format!("{h}Exec=a\nInitialPreference=abc\n"),
+                &["'abc' is not a valid numeric"],
+            ),
+            (format!("{h}Exec=a\nInitialPreference=1_0.5e3\n"), &[]),
+            (
+                "[Desktop Entry]\nExec=a\n".into(),
+                &[
+                    "Key 'Exec' only allowed in Type=Application",
+                    "Key 'Name' is missing",
+                    "Key 'Type' is missing",
+                ],
+            ),
+            (
+                format!("{h}Exec=a\nFoo-bar[x]=1\n"),
+                &["Invalid key: Foo-bar[x]"],
+            ),
+            (format!("{h}Exec=a\nName[de_DE.UTF-8@euro]=x\n"), &[]),
+            (
+                format!("{h}Exec=a\nExec[de]=b\n"),
+                &["Invalid key: Exec[de]"],
+            ),
+            (
+                format!("{h}Exec=a\nOnlyShowIn=a|b|ü\n"),
+                &["'ü' is not a valid string"],
+            ),
+            (
+                format!("{h}Exec=a\nOnlyShowIn=a\\;b;ü,c\n"),
+                &["'ü,c' is not a valid string"],
+            ),
+            (format!("{h}Exec=a\nX-=1\n"), &["Invalid key: X-"]),
+            (h.to_string(), &[]),
+        ];
+        for (text, expected) in cases {
+            let mut errs = entry(text).validation_errors();
+            errs.sort();
+            assert_eq!(errs, *expected, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn parse_failure_hides_cause() {
+        let dir = std::env::temp_dir().join(format!("rwsm-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("bad.desktop");
+        fs::write(&path, "[Desktop Entry]\nnot a key line\n").unwrap();
+        let err = DesktopEntry::load_or(&path, || "Failed to parse".into()).unwrap_err();
+        assert_eq!(format!("{err:#}"), "Failed to parse");
+        fs::write(
+            &path,
+            b"[Desktop Entry]\nType=Application\nName=caf\xe9\nExec=a\n",
+        )
+        .unwrap();
+        assert_eq!(DesktopEntry::load(&path).unwrap().name(), "caf\u{fffd}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn locale_key_error_filter_matches_uwsm_regex() {
+        assert!(is_invalid_locale_key_error("Invalid key: Exec[de]"));
+        assert!(!is_invalid_locale_key_error("Invalid key: Foo-bar[x]"));
+        assert!(!is_invalid_locale_key_error("Invalid key: Exec[]"));
+        assert!(!is_invalid_locale_key_error("Invalid key: Exec"));
     }
 
     #[test]

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail};
 use clap::Parser;
 
 use crate::cli::{self, AppArgs, AppUnitType, Cli, Mode, Silent, TerminalOpts};
@@ -678,7 +678,7 @@ pub fn build(ctx: &mut AppCtx, mut req: AppRequest, props: &mut Vec<String>) -> 
     if let Some(entry_id) = &main_arg.entry_id {
         let entry = match &main_arg.path {
             Some(path) => {
-                let entry = DesktopEntry::load(Path::new(path)).with_context(|| {
+                let entry = DesktopEntry::load_or(Path::new(path), || {
                     format!("Failed to parse entry \"{entry_id}\" from \"{path}\"!")
                 })?;
                 entry.check_basic(main_arg.entry_action.as_deref())?;

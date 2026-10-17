@@ -14,7 +14,7 @@ use anyhow::{Context, Result, bail};
 use crate::comp::Comp;
 use crate::config::{BIN_NAME, PKG_LIBEXEC_DIR, SH_BIN};
 use crate::dbus::Bus;
-use crate::escape::shlex_quote;
+use crate::escape::{py_repr_list, shlex_quote};
 use crate::misc::sane_split;
 use crate::varnames::{SESSION_SPECIFIC, Varnames, filter_env, filter_names};
 use crate::{debug, output, xdg};
@@ -528,7 +528,10 @@ pub fn prepare_env(comp: &Comp) -> Result<()> {
             Some((k, v)) if k != "_" => {
                 env_post.insert(k.to_string(), v.to_string());
             }
-            _ => output::error(&format!("No value: {item:?}!")),
+            _ => {
+                let parts: Vec<&str> = item.splitn(2, '=').collect();
+                output::error(&format!("No value: {}!", py_repr_list(&parts)));
+            }
         }
     }
     let env_post = filter(env_post);

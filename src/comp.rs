@@ -82,6 +82,23 @@ pub struct MainArg {
     pub executable: Option<String>,
 }
 
+/// Same as uwsm's `MainArg.__str__`, which shows up in error messages.
+impl std::fmt::Display for MainArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let fields = [
+            ("entry_id", &self.entry_id),
+            ("entry_action", &self.entry_action),
+            ("executable", &self.executable),
+            ("path", &self.path),
+        ];
+        let set: Vec<String> = fields
+            .iter()
+            .filter_map(|(name, value)| value.as_ref().map(|v| format!("{name}={v}")))
+            .collect();
+        write!(f, "MainArg({})", set.join(", "))
+    }
+}
+
 impl MainArg {
     pub fn new(arg: Option<&str>) -> Result<Self> {
         let mut out = Self::default();
@@ -137,7 +154,7 @@ impl MainArg {
 
     pub fn check_exec(&self) -> Result<()> {
         let Some(exe) = &self.executable else {
-            bail!("Argument is not an executable: {self:?}");
+            bail!("Argument is not an executable: {self}");
         };
         if xdg::which(exe).is_none() {
             bail!("\"{exe}\" not found or is not executable!");
@@ -147,7 +164,7 @@ impl MainArg {
 
     pub fn check_path(&self) -> Result<()> {
         let Some(path) = &self.path else {
-            bail!("Argument is not a path: {self:?}");
+            bail!("Argument is not a path: {self}");
         };
         let p = Path::new(path);
         if !p.is_file() {
@@ -262,8 +279,9 @@ fn load_entry(main_arg: &MainArg) -> Result<DesktopEntry> {
     let id = main_arg.entry_id.as_deref().unwrap_or_default();
     let action = main_arg.entry_action.as_deref();
     if let Some(path) = &main_arg.path {
-        let entry = DesktopEntry::load(Path::new(path))
-            .with_context(|| format!("Failed to parse entry \"{id}\" from \"{path}\"!"))?;
+        let entry = DesktopEntry::load_or(Path::new(path), || {
+            format!("Failed to parse entry \"{id}\" from \"{path}\"!")
+        })?;
         entry.check_basic(action)?;
         Ok(entry)
     } else {
@@ -535,7 +553,7 @@ pub fn fill_comp_globals(input: CompInput) -> Result<Comp> {
     }
 
     if main_arg.entry_id.is_some() {
-        bail!("Could not parse {main_arg:?} down to executable!");
+        bail!("Could not parse {main_arg} down to executable!");
     }
 
     if input.mode == CompMode::Start && (comp.hardcode || main_arg.path.is_some()) {

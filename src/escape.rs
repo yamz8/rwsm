@@ -50,6 +50,42 @@ pub fn shlex_join<S: AsRef<str>>(args: &[S]) -> String {
         .join(" ")
 }
 
+/// Formats a string like Python's `repr()`, for messages where uwsm uses
+/// `{value!r}` or prints a list of strings.
+pub fn py_repr(s: &str) -> String {
+    let quote = if s.contains('\'') && !s.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push(quote);
+    for ch in s.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c == quote => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                out.push_str(&format!("\\x{:02x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push(quote);
+    out
+}
+
+/// Formats a list of strings like Python's `repr()` of a list.
+pub fn py_repr_list<S: AsRef<str>>(items: &[S]) -> String {
+    let inner: Vec<String> = items.iter().map(|i| py_repr(i.as_ref())).collect();
+    format!("[{}]", inner.join(", "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,5 +147,17 @@ mod tests {
             shlex_join(&argv),
             "/usr/bin/uwsm aux exec -- %I '' --unsupported-gpu"
         );
+    }
+
+    #[test]
+    fn repr_matches_python() {
+        assert_eq!(py_repr("a"), "'a'");
+        assert_eq!(py_repr("'"), "\"'\"");
+        assert_eq!(py_repr("'\""), "'\\'\"'");
+        assert_eq!(py_repr("\t\\"), "'\\t\\\\'");
+        assert_eq!(py_repr("\x01"), "'\\x01'");
+        assert_eq!(py_repr("é"), "'é'");
+        assert_eq!(py_repr_list(&["_", "x=y"]), "['_', 'x=y']");
+        assert_eq!(py_repr_list(&[""]), "['']");
     }
 }
