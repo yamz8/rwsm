@@ -11,7 +11,8 @@ use crate::escape::py_repr;
 use crate::misc::sane_split;
 use crate::{debug, xdg};
 
-const MAIN_GROUP: &str = "Desktop Entry";
+/// Main group headers pyxdg accepts, in order of preference.
+const MAIN_GROUPS: [&str; 2] = ["Desktop Entry", "KDE Desktop Entry"];
 
 /// How pyxdg's `checkValue` checks a key's value.
 #[derive(Clone, Copy, PartialEq)]
@@ -26,65 +27,93 @@ enum Check {
     Numeric,
 }
 
-/// pyxdg's `DesktopEntry.checkKey` table: key, whether it takes a locale
-/// suffix, the value check, whether the value is a list, and the `Type` the
-/// key is restricted to. Keys not listed (and not `X-*`) are invalid.
-/// `URL` really is restricted to `Type=URL` in pyxdg.
-const KEYS: &[(&str, bool, Check, bool, Option<&str>)] = &[
-    ("Version", false, Check::Str, false, None),
-    ("Name", true, Check::None, false, None),
-    ("GenericName", true, Check::None, false, None),
-    ("NoDisplay", false, Check::Bool, false, None),
-    ("Comment", true, Check::None, false, None),
-    ("Icon", true, Check::Str, false, None),
-    ("Hidden", false, Check::Bool, false, None),
-    ("OnlyShowIn", false, Check::Str, true, None),
-    ("NotShowIn", false, Check::Str, true, None),
-    ("TryExec", false, Check::Str, false, Some("Application")),
-    ("Exec", false, Check::Str, false, Some("Application")),
-    ("Path", false, Check::Str, false, Some("Application")),
-    ("Terminal", false, Check::Bool, false, Some("Application")),
-    ("Actions", false, Check::Str, true, Some("Application")),
-    ("MimeType", false, Check::Str, true, Some("Application")),
-    ("Categories", false, Check::Str, false, Some("Application")),
-    ("Keywords", true, Check::None, true, Some("Application")),
-    (
-        "StartupNotify",
-        false,
-        Check::Bool,
-        false,
-        Some("Application"),
-    ),
-    (
-        "StartupWMClass",
-        false,
-        Check::None,
-        false,
-        Some("Application"),
-    ),
-    ("URL", false, Check::Str, false, Some("URL")),
-    ("ServiceTypes", false, Check::Str, true, None),
-    ("DocPath", false, Check::Str, false, None),
-    ("InitialPreference", false, Check::Numeric, false, None),
-    ("Dev", false, Check::Str, false, Some("FSDevice")),
-    ("FSType", false, Check::Str, false, Some("FSDevice")),
-    ("MountPoint", false, Check::Str, false, Some("FSDevice")),
-    ("ReadOnly", false, Check::Bool, false, Some("FSDevice")),
-    ("UnmountIcon", true, Check::Str, false, Some("FSDevice")),
+/// One row of pyxdg's `DesktopEntry.checkKey` table.
+struct KeySpec {
+    name: &'static str,
+    /// Accepts a `[locale]` suffix.
+    localized: bool,
+    check: Check,
+    /// The value is a list; each item is checked.
+    list: bool,
+    /// The `Type` the key is restricted to.
+    only_type: Option<&'static str>,
+}
+
+const fn key(name: &'static str, check: Check) -> KeySpec {
+    KeySpec {
+        name,
+        localized: false,
+        check,
+        list: false,
+        only_type: None,
+    }
+}
+
+impl KeySpec {
+    const fn localized(mut self) -> Self {
+        self.localized = true;
+        self
+    }
+
+    const fn list(mut self) -> Self {
+        self.list = true;
+        self
+    }
+
+    const fn only(mut self, entry_type: &'static str) -> Self {
+        self.only_type = Some(entry_type);
+        self
+    }
+}
+
+/// pyxdg's `DesktopEntry.checkKey` table. Keys not listed (and not `X-*`)
+/// are invalid. `URL` really is restricted to `Type=URL` in pyxdg.
+const KEYS: &[KeySpec] = &[
+    key("Version", Check::Str),
+    key("Name", Check::None).localized(),
+    key("GenericName", Check::None).localized(),
+    key("NoDisplay", Check::Bool),
+    key("Comment", Check::None).localized(),
+    key("Icon", Check::Str).localized(),
+    key("Hidden", Check::Bool),
+    key("OnlyShowIn", Check::Str).list(),
+    key("NotShowIn", Check::Str).list(),
+    key("TryExec", Check::Str).only("Application"),
+    key("Exec", Check::Str).only("Application"),
+    key("Path", Check::Str).only("Application"),
+    key("Terminal", Check::Bool).only("Application"),
+    key("Actions", Check::Str).list().only("Application"),
+    key("MimeType", Check::Str).list().only("Application"),
+    key("Categories", Check::Str).only("Application"),
+    key("Keywords", Check::None)
+        .localized()
+        .list()
+        .only("Application"),
+    key("StartupNotify", Check::Bool).only("Application"),
+    key("StartupWMClass", Check::None).only("Application"),
+    key("URL", Check::Str).only("URL"),
+    key("ServiceTypes", Check::Str).list(),
+    key("DocPath", Check::Str),
+    key("InitialPreference", Check::Numeric),
+    key("Dev", Check::Str).only("FSDevice"),
+    key("FSType", Check::Str).only("FSDevice"),
+    key("MountPoint", Check::Str).only("FSDevice"),
+    key("ReadOnly", Check::Bool).only("FSDevice"),
+    key("UnmountIcon", Check::Str).localized().only("FSDevice"),
     // deprecated keys pyxdg only warns about
-    ("Encoding", false, Check::Str, false, None),
-    ("MiniIcon", true, Check::Str, false, None),
-    ("TerminalOptions", false, Check::Str, false, None),
-    ("DefaultApp", false, Check::Str, false, None),
-    ("Protocols", false, Check::Str, true, None),
-    ("Extensions", false, Check::Str, true, None),
-    ("BinaryPattern", false, Check::Str, false, None),
-    ("MapNotify", false, Check::Str, false, None),
-    ("SwallowTitle", true, Check::None, false, None),
-    ("SwallowExec", false, Check::Str, false, None),
+    key("Encoding", Check::Str),
+    key("MiniIcon", Check::Str).localized(),
+    key("TerminalOptions", Check::Str),
+    key("DefaultApp", Check::Str),
+    key("Protocols", Check::Str).list(),
+    key("Extensions", Check::Str).list(),
+    key("BinaryPattern", Check::Str),
+    key("MapNotify", Check::Str),
+    key("SwallowTitle", Check::None).localized(),
+    key("SwallowExec", Check::Str),
     // checked as a regex by pyxdg; any value is accepted here
-    ("FilePattern", false, Check::None, true, None),
-    ("SortOrder", false, Check::Str, true, None),
+    key("FilePattern", Check::None).list(),
+    key("SortOrder", Check::Str).list(),
 ];
 
 /// Validation errors uwsm tolerates (spec §6.1).
@@ -103,6 +132,9 @@ pub struct DesktopEntry {
     pub path: PathBuf,
     /// Group name to key/value pairs, in file order.
     groups: Vec<(String, Vec<(String, String)>)>,
+    /// The main group (pyxdg's `defaultGroup`): `Desktop Entry`, or
+    /// `KDE Desktop Entry` in old files.
+    main: String,
 }
 
 impl DesktopEntry {
@@ -124,12 +156,17 @@ impl DesktopEntry {
 
     /// Parses like pyxdg's `IniFile.parse` with debug off: a repeated key
     /// overwrites the earlier value and a repeated group header empties the
-    /// group.
+    /// group. Lines end at `\n`, `\r\n` or a lone `\r` (Python's universal
+    /// newlines).
     pub fn parse(path: &Path, text: &str) -> Result<Self> {
         let mut groups: Vec<(String, Vec<(String, String)>)> = Vec::new();
         let mut current: Option<usize> = None;
-        for (lineno, raw) in text.lines().enumerate() {
-            let line = raw.trim();
+        for (lineno, raw) in text
+            .split("\r\n")
+            .flat_map(|l| l.split(['\r', '\n']))
+            .enumerate()
+        {
+            let line = py_strip(raw);
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
@@ -157,20 +194,24 @@ impl DesktopEntry {
             let Some(i) = current else {
                 bail!("\"{}\" does not start with a group header", path.display());
             };
-            let key = key.trim().to_string();
-            let value = value.trim().to_string();
+            let key = py_strip(key).to_string();
+            let value = py_strip(value).to_string();
             let entries = &mut groups[i].1;
             match entries.iter_mut().find(|(k, _)| *k == key) {
                 Some(entry) => entry.1 = value,
                 None => entries.push((key, value)),
             }
         }
-        if !groups.iter().any(|(g, _)| g == MAIN_GROUP) {
-            bail!("\"{}\" has no [{MAIN_GROUP}] group", path.display());
-        }
+        let Some(main) = MAIN_GROUPS
+            .into_iter()
+            .find(|m| groups.iter().any(|(g, _)| g == m))
+        else {
+            bail!("\"{}\" has no [Desktop Entry] group", path.display());
+        };
         Ok(Self {
             path: path.to_path_buf(),
             groups,
+            main: main.to_string(),
         })
     }
 
@@ -194,15 +235,18 @@ impl DesktopEntry {
     }
 
     pub fn get_raw(&self, key: &str) -> Option<&str> {
-        self.get_raw_in(MAIN_GROUP, key)
+        self.get_raw_in(&self.main, key)
     }
 
     pub fn has_key(&self, key: &str) -> bool {
         self.get_raw(key).is_some()
     }
 
-    /// Localized value: `key[locale]` for the first matching locale, else `key`.
+    /// Localized value: `key[locale]` for the first matching locale, else
+    /// `key`. As in pyxdg, localized variants count only when `key` itself
+    /// is present.
     pub fn get_localized_in(&self, group: &str, key: &str) -> Option<&str> {
+        self.get_raw_in(group, key)?;
         for lang in locale_variants() {
             if let Some(v) = self.get_raw_in(group, &format!("{key}[{lang}]")) {
                 return Some(v);
@@ -217,22 +261,22 @@ impl DesktopEntry {
     }
 
     pub fn name(&self) -> &str {
-        self.get_localized_in(MAIN_GROUP, "Name")
+        self.get_localized_in(&self.main, "Name")
             .unwrap_or_default()
     }
 
     pub fn generic_name(&self) -> &str {
-        self.get_localized_in(MAIN_GROUP, "GenericName")
+        self.get_localized_in(&self.main, "GenericName")
             .unwrap_or_default()
     }
 
     pub fn comment(&self) -> &str {
-        self.get_localized_in(MAIN_GROUP, "Comment")
+        self.get_localized_in(&self.main, "Comment")
             .unwrap_or_default()
     }
 
     pub fn icon(&self) -> &str {
-        self.get_localized_in(MAIN_GROUP, "Icon")
+        self.get_localized_in(&self.main, "Icon")
             .unwrap_or_default()
     }
 
@@ -252,9 +296,9 @@ impl DesktopEntry {
         self.get("Hidden") == "true"
     }
 
-    /// A `;`-separated list value (`\;` escapes a separator).
+    /// A list value, split like pyxdg's `getList`.
     pub fn get_list(&self, key: &str) -> Vec<String> {
-        split_list(self.get(key))
+        pyxdg_list(self.get(key))
     }
 
     pub fn actions(&self) -> Vec<String> {
@@ -284,7 +328,7 @@ impl DesktopEntry {
                 errors.push(e);
             }
         };
-        let main = self.group(MAIN_GROUP).unwrap_or_default();
+        let main = self.group(&self.main).unwrap_or_default();
         let has = |k: &str| main.iter().any(|(key, _)| key == k);
         if !has("Type") {
             push("Key 'Type' is missing".into());
@@ -297,7 +341,7 @@ impl DesktopEntry {
             let action_group = group.strip_prefix("Desktop Action ").is_some_and(|a| {
                 !a.is_empty() && a.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
             });
-            if !(group == MAIN_GROUP
+            if !(*group == self.main
                 || action_group
                 || (group.starts_with("X-") && group.is_ascii()))
             {
@@ -334,10 +378,17 @@ fn check_key(key: &str, value: &str, entry_type: &str, push: &mut impl FnMut(Str
         }
         return;
     }
-    let known = KEYS.iter().find(|(name, locale, ..)| {
-        key == *name || (*locale && key.strip_prefix(name).is_some_and(is_locale_suffix))
+    let known = KEYS.iter().find(|spec| {
+        key == spec.name
+            || (spec.localized && key.strip_prefix(spec.name).is_some_and(is_locale_suffix))
     });
-    let Some(&(_, _, check, list, only_type)) = known else {
+    let Some(&KeySpec {
+        check,
+        list,
+        only_type,
+        ..
+    }) = known
+    else {
         if !is_x_key(key) {
             push(format!("Invalid key: {key}"));
         }
@@ -406,7 +457,7 @@ fn is_x_key(key: &str) -> bool {
 }
 
 /// pyxdg's `IniFile.getList`: splits on unescaped `;`, else `|`, else `,`,
-/// and drops one trailing empty item.
+/// and drops one trailing empty item. Escapes stay as written.
 fn pyxdg_list(value: &str) -> Vec<String> {
     let unescaped = |sep: char| {
         let mut prev = None;
@@ -417,7 +468,11 @@ fn pyxdg_list(value: &str) -> Vec<String> {
         })
     };
     let Some(sep) = [';', '|', ','].into_iter().find(|&c| unescaped(c)) else {
-        return vec![value.to_string()];
+        return if value.is_empty() {
+            Vec::new()
+        } else {
+            vec![value.to_string()]
+        };
     };
     let mut items = vec![String::new()];
     let mut prev = None;
@@ -437,37 +492,23 @@ fn pyxdg_list(value: &str) -> Vec<String> {
 
 /// Whether Python's `float()` accepts the string.
 fn is_python_float(s: &str) -> bool {
-    let t = s.trim();
-    let t = if t.contains('_') {
-        // underscores are only allowed between digits
-        if t.starts_with('_') || t.ends_with('_') || t.contains("__") {
-            return false;
-        }
-        t.replace('_', "")
-    } else {
-        t.to_string()
-    };
-    !t.is_empty() && t.parse::<f64>().is_ok()
+    let t = py_strip(s);
+    let chars: Vec<char> = t.chars().collect();
+    // an underscore is only allowed between two digits
+    let underscores_ok = chars.iter().enumerate().all(|(i, &c)| {
+        c != '_'
+            || (i > 0
+                && chars[i - 1].is_ascii_digit()
+                && chars.get(i + 1).is_some_and(char::is_ascii_digit))
+    });
+    let t = t.replace('_', "");
+    underscores_ok && !t.is_empty() && t.parse::<f64>().is_ok()
 }
 
-fn split_list(value: &str) -> Vec<String> {
-    let mut items = Vec::new();
-    let mut current = String::new();
-    let mut chars = value.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            '\\' if chars.peek() == Some(&';') => {
-                current.push(';');
-                chars.next();
-            }
-            ';' => items.push(std::mem::take(&mut current)),
-            _ => current.push(c),
-        }
-    }
-    if !current.is_empty() {
-        items.push(current);
-    }
-    items
+/// Python's `str.strip()`: Unicode whitespace plus the separators
+/// U+001C to U+001F, which `char::is_whitespace` leaves out.
+fn py_strip(s: &str) -> &str {
+    s.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
 }
 
 /// Locale variants in lookup order, like pyxdg's `xdg.Locale.langs`:
@@ -871,8 +912,62 @@ mod tests {
              Categories=A;B\\;C;\nDesktopNames=sway;wlroots\n",
         );
         assert_eq!(e.name(), "Fu");
-        assert_eq!(e.categories(), vec!["A", "B;C"]);
+        // pyxdg keeps escapes as written
+        assert_eq!(e.categories(), vec!["A", "B\\;C"]);
         assert_eq!(e.get_list("DesktopNames"), vec!["sway", "wlroots"]);
+
+        // a localized variant without its base key is ignored
+        let e = entry(
+            "[Desktop Entry]\nType=Application\nName=Foo\nExec=foo\nActions=x;\n\
+             [Desktop Action x]\nName[de]=Nur\nExec=foo\n",
+        );
+        assert_eq!(e.get_localized_in("Desktop Action x", "Name"), None);
+    }
+
+    /// Expected lists from pyxdg's `IniFile.getList`.
+    #[test]
+    fn lists_split_like_pyxdg() {
+        for (value, expected) in [
+            ("A;B\\;C;", &["A", "B\\;C"][..]),
+            ("GNOME,KDE", &["GNOME", "KDE"]),
+            ("a|b", &["a", "b"]),
+            ("", &[]),
+            ("x", &["x"]),
+            ("a\\,b,c", &["a\\,b", "c"]),
+        ] {
+            assert_eq!(pyxdg_list(value), expected, "{value:?}");
+        }
+    }
+
+    #[test]
+    fn kde_header_and_line_endings() {
+        let e = entry("[KDE Desktop Entry]\nType=Application\nName=K\nExec=sh\n");
+        assert_eq!(e.name(), "K");
+        assert_eq!(e.validation_errors(), Vec::<String>::new());
+        let both = entry(
+            "[Desktop Entry]\nType=Application\nName=D\nExec=sh\n[KDE Desktop Entry]\nName=K\n",
+        );
+        assert_eq!(both.name(), "D");
+        assert_eq!(
+            both.validation_errors(),
+            vec!["Invalid Group name: KDE Desktop Entry"]
+        );
+        let cr = entry("[Desktop Entry]\rType=Application\rName=C\r\nExec=sh\n");
+        assert_eq!(cr.name(), "C");
+        assert_eq!(cr.exec(), "sh");
+        assert_eq!(py_strip("\u{1f} x \u{a0}"), "x");
+    }
+
+    #[test]
+    fn floats_like_python() {
+        for ok in [
+            "1_0.5e3", "1.5", " 7 ", ".5", "5.", "1e5", "inf", "nan", "1_000",
+        ] {
+            assert!(is_python_float(ok), "{ok}");
+        }
+        for bad in ["1_e5", "1_.5", "1e_5", "_1", "1_", "1__0", "abc", ""] {
+            assert!(!is_python_float(bad), "{bad}");
+        }
     }
 
     #[test]
@@ -976,7 +1071,7 @@ mod tests {
 
     #[test]
     fn parse_failure_hides_cause() {
-        let dir = std::env::temp_dir().join(format!("rwsm-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("rwsm-test-{}", crate::env::random_hex(8)));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("bad.desktop");
         fs::write(&path, "[Desktop Entry]\nnot a key line\n").unwrap();
