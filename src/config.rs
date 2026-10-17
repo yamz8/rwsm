@@ -31,7 +31,7 @@ pub const WHIPTAIL_BIN: &str = build_env!("UWSM_WHIPTAIL_BIN", "whiptail");
 /// uwsm release whose behavior this build matches; `data/` is vendored from it.
 macro_rules! upstream_version {
     () => {
-        "0.27.0"
+        "0.27.1"
     };
 }
 

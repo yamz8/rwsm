@@ -38,7 +38,7 @@ jobs:
       image: archlinux:latest
       options: --privileged
     env:
-      UWSM_REF: v0.27.0
+      UWSM_REF: v0.27.1
     steps:
       - name: Install packages
         run: >

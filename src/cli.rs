@@ -531,7 +531,7 @@ pub fn resolve_unit_rung(cli: Option<UnitRung>, env: Option<&str>) -> (UnitRung,
         Some(other) => (
             UnitRung::Run,
             Some(format!(
-                "invalid UWSM_UNIT_RUNG value \"{other}\" ignored, set to \"run\"."
+                "invalid UWSM_UNIT_RUNG value \"{other}\" ignored and set to \"run\"."
             )),
         ),
     }
@@ -551,7 +551,7 @@ pub fn resolve_tweaks(args: &StartArgs, env: Option<&str>) -> (bool, Option<Warn
         Some(Err(_)) => (
             true,
             Some(format!(
-                "Expected boolean value from UWSM_TWEAKS, got \"{}\" ignored, set to True.",
+                "Expected boolean value from UWSM_TWEAKS, got \"{}\", ignored and set to True.",
                 env.unwrap_or_default()
             )),
         ),
@@ -573,7 +573,7 @@ pub fn resolve_app_unit_type(
         Some(other) => (
             AppUnitType::Scope,
             Some(format!(
-                "invalid UWSM_APP_UNIT_TYPE value \"{other}\" ignored, set to \"scope\"."
+                "invalid UWSM_APP_UNIT_TYPE value \"{other}\" ignored and set to \"scope\"."
             )),
         ),
     }

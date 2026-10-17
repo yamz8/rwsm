@@ -9,7 +9,7 @@
 # ask for the cargo package.
 
 pkgname=rwsm-git
-_upstream=0.27.0
+_upstream=0.27.1
 pkgver=0.1.0.r0.g0000000
 pkgrel=1
 pkgdesc="Rust rewrite of uwsm, the Universal Wayland Session Manager (drop-in uwsm)"

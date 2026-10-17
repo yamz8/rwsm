@@ -5,7 +5,7 @@ Wayland Session Manager. It installs as `uwsm` and aims to be a drop-in
 replacement: same commands and flags, same systemd unit names, same runtime
 and config paths, same compositor plugin API.
 
-**Status:** every uwsm 0.27.0 command is implemented: `start`, `stop`,
+**Status:** every uwsm 0.27.1 command is implemented: `start`, `stop`,
 `finalize`, `select`, `app`, `check` and the `aux` actions the units call,
 including the app daemon. Behavior was compared against Python uwsm under a
 real systemd user manager (see [tests/parity](tests/parity/README.md)),

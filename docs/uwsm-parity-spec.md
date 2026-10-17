@@ -5,7 +5,10 @@ This is the behavioral spec rwsm has to match to be a drop-in replacement for
 **v0.27.0** (commit `f82dece`, 2026-09-15): `uwsm/main.py` (5271 lines),
 `uwsm/misc.py`, `uwsm/dbus.py`, the `uwsm-libexec/` and `uwsm-plugins/` shell
 scripts, `scripts/uwsm-app.sh`, the unit files under `systemd/user/`, and the
-man pages.
+man pages. It has since been updated for **v0.27.1** (commit `0727985`),
+which only changes `uwsm stop`'s job mode (§4.7) and the wording of three
+preset warnings; see [upstream-sync.md](upstream-sync.md) for how releases
+are brought in.
 
 Each requirement has an ID (`P-…`) so later steps can track parity against it.
 The parity checklist at the end lists every ID.
@@ -135,6 +138,7 @@ non-zero and equal to `getppid()`. Otherwise it prints
 | `UWSM_WAIT_VARNAMES_SETTLETIME` | aux exec, waitenv | Float, default 0.2. Invalid values warn and fall back to 0.2 |
 | `UWSM_{ALWAYS,NEVER}_{EXPORT,CLEANUP}_VARNAMES` | env handling | Set modifiers (§5.2) |
 | `UWSM_APP_UNIT_TYPE` | app | `scope` or `service` |
+| `UWSM_STOP_JOB_MODE` | stop | `fail`, `replace` (default) or `replace-irreversibly` (v0.27.1, §4.7) |
 | `UWSM_SILENT_START` | start | Bool or int. `1` silences stdout, `2` also silences warnings |
 | `UWSM_DEBUG`, falling back to `DEBUG` | all | Bool or int. Debug output goes to stderr. An invalid value warns once |
 | `XDG_*` base dirs | all | pyxdg semantics (§3.2) |
@@ -396,8 +400,11 @@ equals the old value) and 1 when cancelled.
 - None: print "Compositor is not running."
 - More than one: warn and use the first.
 - Dry run: print only.
-- Otherwise `StopUnit(unit, "fail")` and poll `ListJobs` until the job is
-  gone.
+- Otherwise `StopUnit(unit, mode)` and poll `ListJobs` until the job is
+  gone. `mode` is `UWSM_STOP_JOB_MODE` if it is `fail`, `replace` or
+  `replace-irreversibly`, else `replace` with the warning `Expected
+  fail|replace|replace-irreversibly from UWSM_STOP_JOB_MODE, got "X",
+  ignored and set to "replace".` (v0.27.0 always used `fail`).
 
 Then handle `-r` (§2.3) on the selected rung and reload if anything changed.
 A reload failure is only a warning. The exit code is 1 only if stopping
@@ -854,7 +861,7 @@ rwsm should use zbus (blocking API) for these. Every call:
 | Set env | session | `Manager.SetEnvironment(as)` |
 | Unset env | session | `Manager.UnsetEnvironment(as)` |
 | D-Bus env | session | `org.freedesktop.DBus.UpdateActivationEnvironment(a{ss})` |
-| Stop unit | session | `Manager.StopUnit(name, "fail")` |
+| Stop unit | session | `Manager.StopUnit(name, mode)` (§4.7) |
 | Sessions | system | `login1.Manager.ListSessionsEx()`, `GetSession(id)` → `Session.VTNr` / `Remote` / `Leader` |
 | Notify | session | `org.freedesktop.Notifications.Notify("UWSM", 0, icon, summary, body, [], {"urgency": byte}, -1)` |
 
