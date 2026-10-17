@@ -2,6 +2,8 @@
 # Compares data/ with a uwsm checkout and lists what a release changed.
 # usage: tools/sync-upstream.sh [--update] /path/to/uwsm-checkout
 #   --update  copy changed and new upstream files into data/
+# Exits 1 when data/ differs and --update was not given, or when a copy
+# fails.
 # See docs/upstream-sync.md for the whole procedure.
 set -eu
 update=0
@@ -16,22 +18,28 @@ files="README.md:README.uwsm.md LICENSE:LICENSE.uwsm"
 
 changed=0
 report() { echo "$1: $2"; changed=1; }
-copy() { [ "$update" = 1 ] && cp -P "$1" "$2" || true; }
+copy() {
+  [ "$update" = 1 ] || return 0
+  mkdir -p "$(dirname "$2")" && cp -P "$1" "$2"
+}
+# a dangling symlink still counts as present
+exists() { [ -e "$1" ] || [ -L "$1" ]; }
 
 for pair in $pairs; do
   up=${pair%%:*} ours=data/${pair#*:}
   for f in "$src/$up"/*; do
-    [ -e "$f" ] || [ -L "$f" ] || continue
+    exists "$f" || continue
     b=$(basename "$f")
     case $b in meson.build | *.py) continue ;; esac
-    if [ ! -e "$ours/$b" ] && [ ! -L "$ours/$b" ]; then
+    if ! exists "$ours/$b"; then
       report new "$up/$b"; copy "$f" "$ours/$b"
     elif ! cmp -s "$f" "$ours/$b"; then
       report changed "$up/$b"; copy "$f" "$ours/$b"
     fi
   done
   for f in "$ours"/*; do
-    [ -e "$src/$up/$(basename "$f")" ] || report "removed upstream" "$up/$(basename "$f")"
+    exists "$f" || continue
+    exists "$src/$up/$(basename "$f")" || report "removed upstream" "$up/$(basename "$f")"
   done
 done
 for pair in $files; do
@@ -49,5 +57,9 @@ if git -C "$src" cat-file -e "$base" 2>/dev/null; then
 else
   echo "Commit $base is not in the checkout; clone without --depth to see the Python diff."
 fi
-[ "$changed" = 0 ] && echo "data/ matches the checkout."
+if [ "$changed" = 0 ]; then
+  echo "data/ matches the checkout."
+elif [ "$update" = 0 ]; then
+  exit 1
+fi
 exit 0
