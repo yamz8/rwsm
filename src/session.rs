@@ -313,7 +313,7 @@ pub fn start(mut args: StartArgs) -> Result<Code> {
         comp.bin_id,
         comp.desktop_names.join(":"),
         comp.name,
-        comp.description
+        comp.description.as_deref().unwrap_or("None")
     );
     output::normal(&format!("{}\n", summary.trim_end()));
 

@@ -245,7 +245,9 @@ pub struct Comp {
     pub cli_desktop_names: Vec<String>,
     pub cli_desktop_names_exclusive: bool,
     pub name: String,
-    pub description: String,
+    /// `None` until something sets it; uwsm prints it as "None" in the start
+    /// summary when an entry has no Comment.
+    pub description: Option<String>,
     /// Hardcode mode, possibly forced by a path argument or inherited from a nested entry.
     pub hardcode: bool,
 }
@@ -495,11 +497,11 @@ pub fn fill_comp_globals(input: CompInput) -> Result<Comp> {
                     .join(" - ")
             };
             if !meta.wm_comment.is_empty() {
-                comp.description = meta.wm_comment.clone();
+                comp.description = Some(meta.wm_comment.clone());
             } else if let Some(n) = nested_args.filter(|n| !n.meta.wm_comment.is_empty()) {
-                comp.description = n.meta.wm_comment.clone();
+                comp.description = Some(n.meta.wm_comment.clone());
             } else if !entry.comment().is_empty() {
-                comp.description = expand_str(entry.comment());
+                comp.description = Some(expand_str(entry.comment()));
             }
 
             if input.mode == CompMode::Start && nested_args.is_some_and(|n| n.hardcode) {
@@ -546,7 +548,7 @@ pub fn fill_comp_globals(input: CompInput) -> Result<Comp> {
                 }
             }
             comp.name = meta.wm_name.clone();
-            comp.description = meta.wm_comment.clone();
+            comp.description = Some(meta.wm_comment.clone());
         }
     } else {
         bail!("Could not determine or parse main argument");
