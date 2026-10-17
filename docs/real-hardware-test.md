@@ -128,7 +128,7 @@ Login command: `uwsm start -g -1 -e -D Hyprland hyprland.desktop`.
   file manager, TUIs, web apps, desktop entries, `-t service`, `-T`, errors):
   identical `systemd-run` command lines.
 - App daemon, 12 requests: identical apart from Q12.
-- `uwsm app` for all 92 installed desktop entries: rwsm refused 7 that
+- `uwsm app` for all 92 installed desktop entries: rwsm refused 6 that
   Python uwsm launches (all six LibreOffice entries, "Invalid key:
   InitialPreference") and worded one error differently. Fixed by porting
   pyxdg's validator (commit b57db37); afterwards all 92, plus 57 synthetic
