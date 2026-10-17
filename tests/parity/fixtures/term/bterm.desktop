@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=B Terminal
+Exec=fakecomp --bterm
+Categories=TerminalEmulator|System
+NotShowIn=Fake,X-Other

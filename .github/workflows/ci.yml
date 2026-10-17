@@ -22,6 +22,8 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test
+      - name: Matched uwsm version agrees everywhere
+        run: tools/check-versions.sh
       - name: Shell syntax of vendored scripts
         run: for f in data/libexec/*.sh data/plugins/*.sh data/scripts/*.sh; do sh -n "$f"; done
       - name: Install into staging dir
@@ -29,3 +31,59 @@ jobs:
           sudo apt-get install -y scdoc
           make install DESTDIR="$PWD/stage" EXTRAS=all MAN_PAGES=1
           find stage -type f -o -type l | sort
+
+  # Python uwsm and rwsm side by side under a real systemd user manager
+  # (tests/parity/ci.sh); any difference fails the job.
+  parity:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+    env:
+      UWSM_REF: v0.27.1
+    steps:
+      - name: Install packages
+        run: >
+          pacman -Syu --noconfirm --needed base-devel git rust scdoc
+          python python-pyxdg python-dbus systemd dbus libnewt
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Install rwsm
+        run: make install PREFIX=/usr
+      - name: Fetch uwsm ${{ env.UWSM_REF }}
+        run: git clone --depth 1 --branch "$UWSM_REF" https://github.com/Vladimir-csp/uwsm /tmp/uwsm-src
+      - name: Parity
+        run: tests/parity/ci.sh /tmp/uwsm-src python3
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: parity-output
+          path: /tmp/uwsm-parity
+
+  # The Arch package installs the same files as Arch's uwsm package.
+  arch-package:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install packages
+        run: pacman -Syu --noconfirm --needed base-devel git rust scdoc
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build package
+        run: |
+          useradd -m builder
+          git config --system --add safe.directory '*'
+          cp -r packaging/arch /tmp/pkg && chown -R builder /tmp/pkg
+          cd /tmp/pkg
+          su builder -c "RWSM_SRC='git+file://$GITHUB_WORKSPACE#commit=$GITHUB_SHA' makepkg --noconfirm"
+      - name: Compare file list with Arch's uwsm
+        run: |
+          cd /tmp/pkg
+          pacman -Swdd --noconfirm uwsm
+          pacman -Qlp rwsm-git-[0-9]*.pkg.tar.zst | awk '{print $2}' | grep -v '/$' | sort > rwsm.txt
+          pacman -Qlp /var/cache/pacman/pkg/uwsm-*.pkg.tar.zst | awk '{print $2}' | grep -v '/$' |
+            grep -v '^/usr/share/uwsm/modules/' | sort > uwsm.txt
+          diff uwsm.txt rwsm.txt | tee files.diff || true
+          # only the license directory may differ
+          ! grep '^[<>]' files.diff | grep -v '/usr/share/licenses/'

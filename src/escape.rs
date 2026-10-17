@@ -1,5 +1,7 @@
 //! String escaping helpers that must match uwsm byte for byte.
 
+use crate::unicode_tables;
+
 /// Escapes a string the way uwsm's `simple_systemd_escape` does (spec §8.1).
 ///
 /// This is deliberately not `systemd-escape`: `:` is kept, `/` becomes `-`,
@@ -48,6 +50,81 @@ pub fn shlex_join<S: AsRef<str>>(args: &[S]) -> String {
         .map(|a| shlex_quote(a.as_ref()))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Formats a string like Python's `repr()`, for messages where uwsm uses
+/// `{value!r}` or prints a list of strings.
+pub fn py_repr(s: &str) -> String {
+    let quote = if s.contains('\'') && !s.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push(quote);
+    for ch in s.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c == quote => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if !is_py_printable(c) => {
+                let cp = c as u32;
+                out.push_str(&match cp {
+                    0..=0xff => format!("\\x{cp:02x}"),
+                    0x100..=0xffff => format!("\\u{cp:04x}"),
+                    _ => format!("\\U{cp:08x}"),
+                });
+            }
+            c => out.push(c),
+        }
+    }
+    out.push(quote);
+    out
+}
+
+/// Python's `str.isprintable()` for one character.
+fn is_py_printable(c: char) -> bool {
+    !in_ranges(unicode_tables::NONPRINTABLE, c)
+}
+
+/// Whether `c` falls in one of the sorted, inclusive `ranges`.
+pub fn in_ranges(ranges: &[(u32, u32)], c: char) -> bool {
+    let cp = c as u32;
+    ranges
+        .binary_search_by(|&(lo, hi)| {
+            if hi < cp {
+                std::cmp::Ordering::Less
+            } else if lo > cp {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .is_ok()
+}
+
+/// An environment value as Python prints it: undecodable bytes become
+/// surrogates (surrogateescape), which stderr writes as `\udcXX`.
+pub fn py_env_display(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len());
+    for chunk in bytes.utf8_chunks() {
+        out.push_str(chunk.valid());
+        for b in chunk.invalid() {
+            out.push_str(&format!("\\udc{b:02x}"));
+        }
+    }
+    out
+}
+
+/// Formats a list of strings like Python's `repr()` of a list.
+pub fn py_repr_list<S: AsRef<str>>(items: &[S]) -> String {
+    let inner: Vec<String> = items.iter().map(|i| py_repr(i.as_ref())).collect();
+    format!("[{}]", inner.join(", "))
 }
 
 #[cfg(test)]
@@ -111,5 +188,24 @@ mod tests {
             shlex_join(&argv),
             "/usr/bin/uwsm aux exec -- %I '' --unsupported-gpu"
         );
+    }
+
+    #[test]
+    fn repr_matches_python() {
+        assert_eq!(py_repr("a"), "'a'");
+        assert_eq!(py_repr("'"), "\"'\"");
+        assert_eq!(py_repr("'\""), "'\\'\"'");
+        assert_eq!(py_repr("\t\\"), "'\\t\\\\'");
+        assert_eq!(py_repr("\x01"), "'\\x01'");
+        assert_eq!(py_repr("é"), "'é'");
+        assert_eq!(
+            py_repr("a\u{200b}\u{85}\u{a0} \u{e000}"),
+            "'a\\u200b\\x85\\xa0 \\ue000'"
+        );
+        assert_eq!(py_repr("\u{10ffff}\u{1f600}"), "'\\U0010ffff😀'");
+        assert_eq!(py_repr_list(&["_", "x=y"]), "['_', 'x=y']");
+        assert_eq!(py_repr_list(&[""]), "['']");
+        assert_eq!(py_env_display(b"a\xffb\xc3"), "a\\udcffb\\udcc3");
+        assert_eq!(py_env_display("é".as_bytes()), "é");
     }
 }

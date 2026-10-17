@@ -1,0 +1,3 @@
+#!/bin/sh
+# Stand-in for systemd-run: prints what it would run.
+printf "[%s] " "$0" "$@"; echo

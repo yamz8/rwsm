@@ -28,5 +28,29 @@ pub const SH_BIN: &str = build_env!("UWSM_SH_BIN", "sh");
 /// `whiptail` binary used by `uwsm select`.
 pub const WHIPTAIL_BIN: &str = build_env!("UWSM_WHIPTAIL_BIN", "whiptail");
 
-/// Version reported by `uwsm --version`.
-pub const PROJECT_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// uwsm release whose behavior this build matches; `data/` is vendored from it.
+macro_rules! upstream_version {
+    () => {
+        "0.27.1"
+    };
+}
+
+/// Version reported by `uwsm --version`: the matched uwsm release first, so
+/// scripts that parse it keep working, then rwsm's own version.
+pub const PROJECT_VERSION: &str = concat!(
+    upstream_version!(),
+    " (rwsm ",
+    env!("CARGO_PKG_VERSION"),
+    ")"
+);
+
+#[cfg(test)]
+mod tests {
+    /// The vendored data is from the matched release. The copies outside
+    /// the crate are checked by `tools/check-versions.sh`.
+    #[test]
+    fn upstream_version_matches_vendored_data() {
+        let readme = include_str!("../data/README.md");
+        assert!(readme.contains(concat!("v", upstream_version!(), " ")));
+    }
+}

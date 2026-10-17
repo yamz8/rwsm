@@ -12,8 +12,12 @@ mod env;
 mod escape;
 mod misc;
 mod output;
+mod pyre;
 mod select;
 mod session;
+mod unicode_tables {
+    include!(concat!(env!("OUT_DIR"), "/unicode_tables.rs"));
+}
 mod units;
 mod varnames;
 mod xdg;

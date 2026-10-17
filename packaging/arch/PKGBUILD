@@ -1,0 +1,69 @@
+# Builds rwsm as a replacement for Arch's uwsm package: same paths, same
+# extras, and `provides=uwsm` so packages that depend on uwsm stay satisfied.
+# Going back is `pacman -S uwsm`.
+#
+# From GitHub:            makepkg -si
+# From a local checkout:  RWSM_SRC="git+file://$PWD/../..#branch=my-branch" makepkg -si
+#
+# With Rust from rustup outside pacman, add --nodeps (-d) so makepkg doesn't
+# ask for the cargo package.
+
+pkgname=rwsm-git
+_upstream=0.27.1
+pkgver=0.1.0.r0.g0000000
+pkgrel=1
+pkgdesc="Rust rewrite of uwsm, the Universal Wayland Session Manager (drop-in uwsm)"
+arch=(x86_64 aarch64)
+url="https://github.com/yamz8/rwsm"
+license=(MIT)
+depends=(gcc-libs glibc sh systemd util-linux)
+makedepends=(cargo git python scdoc)
+optdepends=(
+  'libnewt: for "uwsm start select"'
+  'libnotify: for feedback from "uwsm app" commands or the fumon service'
+  'bemenu: optional picker for uuctl'
+  'dmenu: optional picker for uuctl'
+  'fuzzel: optional picker for uuctl'
+  'rofi: optional picker for uuctl'
+  'wmenu: optional picker for uuctl'
+  'wofi: optional picker for uuctl'
+)
+provides=("uwsm=$_upstream")
+conflicts=(uwsm)
+options=(!lto)
+source=("rwsm::${RWSM_SRC:-git+$url.git}")
+sha256sums=(SKIP)
+
+# Arch's uwsm puts the libexec scripts in /usr/lib/uwsm and enables these
+# extras; matching both keeps existing configs and unit drop-ins valid.
+_make_args=(PREFIX=/usr LIBEXECDIR=/usr/lib UWSM_APP=1 UUCTL=1 WAIT_TRAY=1 FUMON=1 MAN_PAGES=1)
+
+pkgver() {
+  cd rwsm
+  local ver
+  ver=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+  printf '%s.r%s.g%s' "$ver" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+  cd rwsm
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd rwsm
+  export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
+  make build "${_make_args[@]}" CARGO="cargo --frozen"
+}
+
+check() {
+  cd rwsm
+  export RUSTUP_TOOLCHAIN=stable
+  cargo test --frozen --release
+}
+
+package() {
+  cd rwsm
+  make install "${_make_args[@]}" CARGO="cargo --frozen" DESTDIR="$pkgdir"
+}

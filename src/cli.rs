@@ -531,7 +531,23 @@ pub fn resolve_unit_rung(cli: Option<UnitRung>, env: Option<&str>) -> (UnitRung,
         Some(other) => (
             UnitRung::Run,
             Some(format!(
-                "invalid UWSM_UNIT_RUNG value \"{other}\" ignored, set to \"run\"."
+                "invalid UWSM_UNIT_RUNG value \"{other}\" ignored and set to \"run\"."
+            )),
+        ),
+    }
+}
+
+/// Job mode for stopping the compositor unit: `UWSM_STOP_JOB_MODE`, then
+/// `replace`.
+pub fn resolve_stop_job_mode(env: Option<&str>) -> (&'static str, Option<Warning>) {
+    match env {
+        None | Some("replace") => ("replace", None),
+        Some("fail") => ("fail", None),
+        Some("replace-irreversibly") => ("replace-irreversibly", None),
+        Some(other) => (
+            "replace",
+            Some(format!(
+                "Expected fail|replace|replace-irreversibly from UWSM_STOP_JOB_MODE, got \"{other}\", ignored and set to \"replace\"."
             )),
         ),
     }
@@ -551,7 +567,7 @@ pub fn resolve_tweaks(args: &StartArgs, env: Option<&str>) -> (bool, Option<Warn
         Some(Err(_)) => (
             true,
             Some(format!(
-                "Expected boolean value from UWSM_TWEAKS, got \"{}\" ignored, set to True.",
+                "Expected boolean value from UWSM_TWEAKS, got \"{}\", ignored and set to True.",
                 env.unwrap_or_default()
             )),
         ),
@@ -573,7 +589,7 @@ pub fn resolve_app_unit_type(
         Some(other) => (
             AppUnitType::Scope,
             Some(format!(
-                "invalid UWSM_APP_UNIT_TYPE value \"{other}\" ignored, set to \"scope\"."
+                "invalid UWSM_APP_UNIT_TYPE value \"{other}\" ignored and set to \"scope\"."
             )),
         ),
     }
@@ -779,6 +795,24 @@ mod tests {
             AppUnitType::Service
         );
         assert_eq!(resolve_app_unit_type(None, None).0, AppUnitType::Scope);
+
+        assert_eq!(resolve_stop_job_mode(None), ("replace", None));
+        assert_eq!(resolve_stop_job_mode(Some("fail")), ("fail", None));
+        assert_eq!(
+            resolve_stop_job_mode(Some("replace-irreversibly")),
+            ("replace-irreversibly", None)
+        );
+        assert_eq!(
+            resolve_stop_job_mode(Some("")),
+            (
+                "replace",
+                Some(
+                    "Expected fail|replace|replace-irreversibly from UWSM_STOP_JOB_MODE, \
+                     got \"\", ignored and set to \"replace\"."
+                        .to_string()
+                )
+            )
+        );
 
         let Mode::Start(s) = parse(&["start", "sway"]).unwrap().mode else {
             panic!()

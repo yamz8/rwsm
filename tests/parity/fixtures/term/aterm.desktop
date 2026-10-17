@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=A Terminal
+Exec=fakecomp --aterm
+Categories=System,TerminalEmulator
+OnlyShowIn=GNOME,Fake

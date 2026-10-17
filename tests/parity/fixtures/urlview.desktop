@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=URL Viewer
+Exec=fakecomp --url %u

@@ -82,6 +82,23 @@ pub struct MainArg {
     pub executable: Option<String>,
 }
 
+/// Same as uwsm's `MainArg.__str__`, which shows up in error messages.
+impl std::fmt::Display for MainArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let fields = [
+            ("entry_id", &self.entry_id),
+            ("entry_action", &self.entry_action),
+            ("executable", &self.executable),
+            ("path", &self.path),
+        ];
+        let set: Vec<String> = fields
+            .iter()
+            .filter_map(|(name, value)| value.as_ref().map(|v| format!("{name}={v}")))
+            .collect();
+        write!(f, "MainArg({})", set.join(", "))
+    }
+}
+
 impl MainArg {
     pub fn new(arg: Option<&str>) -> Result<Self> {
         let mut out = Self::default();
@@ -137,7 +154,7 @@ impl MainArg {
 
     pub fn check_exec(&self) -> Result<()> {
         let Some(exe) = &self.executable else {
-            bail!("Argument is not an executable: {self:?}");
+            bail!("Argument is not an executable: {self}");
         };
         if xdg::which(exe).is_none() {
             bail!("\"{exe}\" not found or is not executable!");
@@ -147,7 +164,7 @@ impl MainArg {
 
     pub fn check_path(&self) -> Result<()> {
         let Some(path) = &self.path else {
-            bail!("Argument is not a path: {self:?}");
+            bail!("Argument is not a path: {self}");
         };
         let p = Path::new(path);
         if !p.is_file() {
@@ -228,7 +245,9 @@ pub struct Comp {
     pub cli_desktop_names: Vec<String>,
     pub cli_desktop_names_exclusive: bool,
     pub name: String,
-    pub description: String,
+    /// `None` until something sets it; uwsm prints it as "None" in the start
+    /// summary when an entry has no Comment.
+    pub description: Option<String>,
     /// Hardcode mode, possibly forced by a path argument or inherited from a nested entry.
     pub hardcode: bool,
 }
@@ -262,8 +281,9 @@ fn load_entry(main_arg: &MainArg) -> Result<DesktopEntry> {
     let id = main_arg.entry_id.as_deref().unwrap_or_default();
     let action = main_arg.entry_action.as_deref();
     if let Some(path) = &main_arg.path {
-        let entry = DesktopEntry::load(Path::new(path))
-            .with_context(|| format!("Failed to parse entry \"{id}\" from \"{path}\"!"))?;
+        let entry = DesktopEntry::load_or(Path::new(path), || {
+            format!("Failed to parse entry \"{id}\" from \"{path}\"!")
+        })?;
         entry.check_basic(action)?;
         Ok(entry)
     } else {
@@ -477,11 +497,11 @@ pub fn fill_comp_globals(input: CompInput) -> Result<Comp> {
                     .join(" - ")
             };
             if !meta.wm_comment.is_empty() {
-                comp.description = meta.wm_comment.clone();
+                comp.description = Some(meta.wm_comment.clone());
             } else if let Some(n) = nested_args.filter(|n| !n.meta.wm_comment.is_empty()) {
-                comp.description = n.meta.wm_comment.clone();
+                comp.description = Some(n.meta.wm_comment.clone());
             } else if !entry.comment().is_empty() {
-                comp.description = expand_str(entry.comment());
+                comp.description = Some(expand_str(entry.comment()));
             }
 
             if input.mode == CompMode::Start && nested_args.is_some_and(|n| n.hardcode) {
@@ -528,14 +548,14 @@ pub fn fill_comp_globals(input: CompInput) -> Result<Comp> {
                 }
             }
             comp.name = meta.wm_name.clone();
-            comp.description = meta.wm_comment.clone();
+            comp.description = Some(meta.wm_comment.clone());
         }
     } else {
         bail!("Could not determine or parse main argument");
     }
 
     if main_arg.entry_id.is_some() {
-        bail!("Could not parse {main_arg:?} down to executable!");
+        bail!("Could not parse {main_arg} down to executable!");
     }
 
     if input.mode == CompMode::Start && (comp.hardcode || main_arg.path.is_some()) {

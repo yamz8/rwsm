@@ -1,7 +1,7 @@
 # Vendored uwsm files
 
 These files are copied unchanged from
-[uwsm](https://github.com/Vladimir-csp/uwsm) v0.27.0 (commit `f82dece`) and are
+[uwsm](https://github.com/Vladimir-csp/uwsm) v0.27.1 (commit `0727985`) and are
 covered by its MIT license (see `LICENSE.uwsm`). rwsm replaces only uwsm's
 Python executable; everything else is reused as is so plugins, units and docs
 stay identical.

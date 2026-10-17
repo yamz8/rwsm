@@ -1,10 +1,27 @@
 #!/bin/bash
 # usage: cmp.sh args...  -> compares output and generated units of pyuwsm vs uwsm
 export XDG_RUNTIME_DIR=/run/user/0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus
+[ -n "${SHIM:-}" ] && export PATH=$SHIM:$PATH
 D=${PARITY_OUT:-/tmp/uwsm-parity}/out; rm -rf $D; mkdir -p $D
 for impl in pyuwsm uwsm; do
-  rm -rf /run/user/0/systemd/user ~/.config/systemd/user/wayland-* 2>/dev/null
-  $impl "$@" > $D/$impl.out 2>&1; echo "rc=$?" >> $D/$impl.out
+  rm -rf /run/user/0/systemd/user ~/.config/systemd/user 2>/dev/null
+  # mask random unit suffixes; sort validation errors (uwsm keeps them in a set)
+  $impl "$@" 2>&1 | sed -E 's/-[0-9a-f]{8}\.scope/-RAND.scope/g; s/@[0-9a-f]{8}\.service/@RAND.service/g' |
+    awk '
+      # sort each block of err lines in place (plain awk, no sort pipe)
+      function flush(  i, j, v) {
+        for (i = 2; i <= n; i++) {
+          v = e[i]
+          for (j = i - 1; j > 0 && e[j] > v; j--) e[j + 1] = e[j]
+          e[j + 1] = v
+        }
+        for (i = 1; i <= n; i++) print e[i]
+        n = 0
+      }
+      /^(<3>)?  err: / { e[++n] = $0; next }
+      { flush(); print }
+      END { flush() }' > $D/$impl.out
+  echo "rc=${PIPESTATUS[0]}" >> $D/$impl.out
   mkdir -p $D/$impl.units
   [ -d /run/user/0/systemd/user ] && cp -a /run/user/0/systemd/user/. $D/$impl.units/
 done

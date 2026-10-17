@@ -5,7 +5,7 @@ Wayland Session Manager. It installs as `uwsm` and aims to be a drop-in
 replacement: same commands and flags, same systemd unit names, same runtime
 and config paths, same compositor plugin API.
 
-**Status:** every uwsm 0.27.0 command is implemented: `start`, `stop`,
+**Status:** every uwsm 0.27.1 command is implemented: `start`, `stop`,
 `finalize`, `select`, `app`, `check` and the `aux` actions the units call,
 including the app daemon. Behavior was compared against Python uwsm under a
 real systemd user manager (see [tests/parity](tests/parity/README.md)),
@@ -25,9 +25,12 @@ container), which matters most for `uwsm app` launches.
 
 ## Build and install
 
-Needs Rust 1.88 or newer, and `scdoc` for the man pages. At runtime it uses
-the same tools as uwsm: systemd, a POSIX `sh`, and optionally `whiptail` (for
-`select`) and `waitpid`.
+Needs Rust 1.88 or newer, and `scdoc` for the man pages. A few messages and
+checks follow Python's Unicode tables, so the build generates them with
+`/usr/bin/python3` (or `$RWSM_PYTHON`) when it exists and otherwise uses the
+copy in `src/unicode_tables.rs` (Python 3.14). At runtime it uses the same
+tools as uwsm: systemd, a POSIX `sh`, and optionally `whiptail` (for
+`select`) and `waitpid`. Python is not needed at runtime.
 
 ```sh
 make
@@ -51,6 +54,8 @@ should be restarted once so the units pick up the new binary.
 
 Differences you might notice, all listed in the spec's quirks table:
 - Argument errors are worded by clap rather than argparse (exit code 2 in both).
+- When the session bus cannot be reached at all, the error text comes from
+  zbus rather than libdbus.
 - A few uwsm crashes are fixed instead of reproduced, for example `start -U home`
   without `~/.config/systemd`, `check may-start` hitting a D-Bus error, and
   the app daemon exiting on bad arguments.

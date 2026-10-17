@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Comma Session
+Exec=fakecomp --comma
+DesktopNames=Foo,Bar

@@ -16,6 +16,17 @@ throwaway root container and diffs what they do.
    unit, sends it requests through the FIFOs and saves the replies.
 6. For `app`, put a fake `systemd-run` that prints its arguments first in
    `PATH` (`cmp.sh` prepends `$SHIM` when set) so nothing is launched.
+   `fixtures/systemd-run` is one.
+
+`ci.sh /path/to/uwsm-source` does all of the above without supervision
+and fails on any difference; CI runs it in an Arch container (the `parity`
+job). It installs the desktop entries in `fixtures/` and the edge cases
+from `make-edge-entries.sh`, runs every line of `cases.txt` through
+`cmp.sh`, then the live session and the app daemon. Add a line to
+`cases.txt` for each new behavior worth pinning.
+
+`cmp.sh` masks the random suffix of unit names and sorts `err:` lines
+(uwsm collects validation errors in a set, so their order varies).
 
 Known noise: `pyuwsm` adds `PYTHONPATH` and `LC_CTYPE` to the exported
 environment, PIDs differ, and argparse usage errors are worded differently

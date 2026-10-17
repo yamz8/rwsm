@@ -242,13 +242,14 @@ impl UnitFiles {
         let mut preloader_data = vec![header(&comp.id)];
         let mut service_data = vec![header(&comp.id)];
 
-        if !comp.name.is_empty() || !comp.description.is_empty() {
+        let description = comp.description.as_deref().unwrap_or_default();
+        if !comp.name.is_empty() || !description.is_empty() {
             let name = if comp.name.is_empty() {
                 &comp.bin_name
             } else {
                 &comp.name
             };
-            let desc: Vec<&str> = [name.as_str(), comp.description.as_str()]
+            let desc: Vec<&str> = [name.as_str(), description]
                 .into_iter()
                 .filter(|s| !s.is_empty())
                 .collect();
@@ -404,7 +405,7 @@ mod tests {
             bin_id: "sway".into(),
             desktop_names: names.iter().map(|s| s.to_string()).collect(),
             name: "Sway".into(),
-            description: "An i3-compatible Wayland compositor".into(),
+            description: Some("An i3-compatible Wayland compositor".into()),
             ..Default::default()
         }
     }
@@ -472,7 +473,7 @@ mod tests {
         unsafe { std::env::set_var("XDG_RUNTIME_DIR", &dir) };
         let mut c = comp(&["sway"], &[], &["sway"]);
         c.name.clear();
-        c.description.clear();
+        c.description = None;
         let mut uf = UnitFiles::new(false);
         uf.generate_dropins(&c, 30, UnitRung::Run).unwrap();
         assert!(!uf.changed);
