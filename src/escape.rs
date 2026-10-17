@@ -1,5 +1,7 @@
 //! String escaping helpers that must match uwsm byte for byte.
 
+use crate::nonprintable;
+
 /// Escapes a string the way uwsm's `simple_systemd_escape` does (spec §8.1).
 ///
 /// This is deliberately not `systemd-escape`: `:` is kept, `/` becomes `-`,
@@ -70,14 +72,35 @@ pub fn py_repr(s: &str) -> String {
                 out.push('\\');
                 out.push(c);
             }
-            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
-                out.push_str(&format!("\\x{:02x}", c as u32));
+            c if !is_py_printable(c) => {
+                let cp = c as u32;
+                out.push_str(&match cp {
+                    0..=0xff => format!("\\x{cp:02x}"),
+                    0x100..=0xffff => format!("\\u{cp:04x}"),
+                    _ => format!("\\U{cp:08x}"),
+                });
             }
             c => out.push(c),
         }
     }
     out.push(quote);
     out
+}
+
+/// Python's `str.isprintable()` for one character.
+fn is_py_printable(c: char) -> bool {
+    let cp = c as u32;
+    nonprintable::RANGES
+        .binary_search_by(|&(lo, hi)| {
+            if hi < cp {
+                std::cmp::Ordering::Less
+            } else if lo > cp {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .is_err()
 }
 
 /// Formats a list of strings like Python's `repr()` of a list.
@@ -157,6 +180,11 @@ mod tests {
         assert_eq!(py_repr("\t\\"), "'\\t\\\\'");
         assert_eq!(py_repr("\x01"), "'\\x01'");
         assert_eq!(py_repr("é"), "'é'");
+        assert_eq!(
+            py_repr("a\u{200b}\u{85}\u{a0} \u{e000}"),
+            "'a\\u200b\\x85\\xa0 \\ue000'"
+        );
+        assert_eq!(py_repr("\u{10ffff}\u{1f600}"), "'\\U0010ffff😀'");
         assert_eq!(py_repr_list(&["_", "x=y"]), "['_', 'x=y']");
         assert_eq!(py_repr_list(&[""]), "['']");
     }

@@ -11,6 +11,7 @@ mod desktop_entry;
 mod env;
 mod escape;
 mod misc;
+mod nonprintable;
 mod output;
 mod select;
 mod session;
