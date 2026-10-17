@@ -38,16 +38,16 @@ new release:
    - `.github/workflows/ci.yml` (`UWSM_REF`)
    - `README.md` (status line)
 
-   `config::tests::upstream_version_matches_everywhere` fails until the
-   first four agree.
+   `tools/check-versions.sh` (run by CI) fails until they all agree.
 
 6. Record the change in `docs/uwsm-parity-spec.md`: the version note at the
    top, the affected section, and a new quirk in §11 if upstream introduced
    one worth deciding on.
 
-7. If the Python uwsm runs on moved to a new Unicode version, regenerate
-   the table `py_repr` uses with
-   `python3 -I tools/gen-nonprintable.py > src/nonprintable.rs`.
+7. Builds generate the Unicode tables with the system Python
+   (`build.rs`). When Arch's Python moves to a new Unicode version, also
+   refresh the committed fallback with
+   `/usr/bin/python3 -I tools/gen-unicode-tables.py > src/unicode_tables.rs`.
 
 8. Add `tests/parity/cases.txt` lines for new behavior, push, and let the
    parity job compare against the new release.

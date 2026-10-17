@@ -22,6 +22,8 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test
+      - name: Matched uwsm version agrees everywhere
+        run: tools/check-versions.sh
       - name: Shell syntax of vendored scripts
         run: for f in data/libexec/*.sh data/plugins/*.sh data/scripts/*.sh; do sh -n "$f"; done
       - name: Install into staging dir
