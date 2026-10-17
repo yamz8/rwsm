@@ -1,5 +1,6 @@
 # Command lines compared by ci.sh with cmp.sh, one per line, shell-quoted.
 # Lines starting with "app" run with a fake systemd-run first in PATH.
+# Leading VAR=value words are set in the environment of both runs.
 
 # start: unit generation only (-o) and dry runs (-n)
 start -o fakecomp.desktop
@@ -16,6 +17,7 @@ start -n nonexistent.desktop
 start -o hidden.desktop
 start -o noexec.desktop
 start -o -- nonexistent-binary-xyz
+start -o commasession.desktop
 
 # stop and checks with no session running
 stop -n
@@ -58,6 +60,14 @@ app -T -- fakecomp --tui
 app -T --app-id=x --title=y -- fakecomp
 app -T viewer.desktop
 app -- "fakecomp with space"
+
+# pyxdg details: localized keys need their base key; fallback terminals are
+# picked by comma/pipe separated Categories and OnlyShowIn/NotShowIn
+LANG=de_DE.UTF-8 app edge-49.desktop:x
+LANG=de_DE.UTF-8 app edge-53.desktop
+XDG_CONFIG_DIRS=/nonexistent XDG_DATA_DIRS=/usr/share/rwsm-term XDG_CURRENT_DESKTOP=Fake app -T -- fakecomp
+XDG_CONFIG_DIRS=/nonexistent XDG_DATA_DIRS=/usr/share/rwsm-term XDG_CURRENT_DESKTOP=KDE app -T -- fakecomp
+XDG_CONFIG_DIRS=/nonexistent XDG_DATA_DIRS=/usr/share/rwsm-term XDG_CURRENT_DESKTOP=X-Other app -T -- fakecomp
 
 # aux actions refuse to run outside the user manager
 aux prepare-env fakecomp.desktop

@@ -51,4 +51,12 @@ mk "${H}Exec=fakecomp\n[X-Foo]\nTargetEnvironment=x\nOther=y\n"
 mk "${H}Exec=fakecomp\nInitialPreference= 7 \n"
 mk "${H}Exec=fakecomp\n  # comment\n\n"
 mk "${H}Exec=fakecomp\nType=Application\nName[x]=1\nName[]=2\n"
-echo edge-17.desktop:a edge-17.desktop:b edge-17.desktop:c
+mk "${H}Exec=fakecomp\nActions=new,private\n[Desktop Action new]\nName=N\nExec=fakecomp --new\n[Desktop Action private]\nName=P\nExec=fakecomp --private\n" # 46: comma list
+mk "[KDE Desktop Entry]\nType=Application\nName=K\nExec=fakecomp --kde\n"       # old main group header
+mk "${H}Exec=fakecomp --main\n[KDE Desktop Entry]\nName=K\n"
+mk "${H}Exec=fakecomp\nActions=x;\n[Desktop Action x]\nName[de]=Nur\nExec=fakecomp --x\n" # 49: localized key without base
+mk "[Desktop Entry]\rType=Application\rName=CR\rExec=fakecomp --cr\r"         # old Mac line endings
+mk "[Desktop Entry]\r\nType=Application\r\nName=CRLF\r\nExec=fakecomp --crlf\r\n"
+mk "${H}Exec=fakecomp\nInitialPreference=1_e5\n"                           # misplaced underscore
+mk "${H}Exec=fakecomp\x1f\nName[de]=\x1c x\n"                            # Python strips U+001C..U+001F
+echo edge-17.desktop:a edge-17.desktop:b edge-17.desktop:c edge-46.desktop:new edge-46.desktop:private

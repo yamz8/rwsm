@@ -23,6 +23,8 @@ fi
 echo "user manager: $(systemctl --user is-system-running 2>&1)"
 
 install -m644 "$HERE"/fixtures/*.desktop /usr/share/applications/
+install -Dm644 -t /usr/share/rwsm-term/applications "$HERE"/fixtures/term/*.desktop
+install -m644 "$HERE"/fixtures/sessions/*.desktop /usr/share/wayland-sessions/
 mkdir -p /etc/xdg && echo faketerm.desktop > /etc/xdg/xdg-terminals.list
 edge=$("$HERE/make-edge-entries.sh" /usr/share/applications)
 shim=$(mktemp -d) && install -m755 "$HERE/fixtures/systemd-run" "$shim/"
@@ -46,11 +48,10 @@ cd /tmp
 while IFS= read -r line; do
   case $line in '' | '#'*) continue ;; esac
   eval "set -- $line"
-  if [ "$1" = app ]; then
-    check "$line" env SHIM="$shim" "$HERE/cmp.sh" "$@"
-  else
-    check "$line" "$HERE/cmp.sh" "$@"
-  fi
+  vars=()
+  while [[ $1 == [A-Z_]*=* ]]; do vars+=("$1"); shift; done
+  [ "$1" = app ] && vars+=("SHIM=$shim")
+  check "$line" env "${vars[@]}" "$HERE/cmp.sh" "$@"
 done < "$HERE/cases.txt"
 for id in $edge; do
   check "app $id" env SHIM="$shim" "$HERE/cmp.sh" app "$id" /x
