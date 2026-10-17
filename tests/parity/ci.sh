@@ -40,6 +40,8 @@ check() {
   fi
 }
 
+# Without ~/.config/systemd, `start -U home` crashes in uwsm (quirk Q11).
+mkdir -p ~/.config/systemd
 cd /tmp
 while IFS= read -r line; do
   case $line in '' | '#'*) continue ;; esac
