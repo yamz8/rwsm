@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Fake Terminal
+Exec=fakecomp --term
+Categories=System;TerminalEmulator;
+X-TerminalArgExec=-e
+X-TerminalArgAppId=--class=
+X-TerminalArgTitle=--title=

@@ -17,6 +17,7 @@ req nonexist
 req -s bogus fakecomp
 printf '' | send
 printf '\0bogus\0thing' | send
+echo '# Q12: below here only rwsm keeps answering' >> $O
 req -x fakecomp
 printf stop | send
 sleep 0.5

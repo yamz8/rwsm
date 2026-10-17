@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=With Actions
+Exec=fakecomp --main
+Actions=new;private;
+
+[Desktop Action new]
+Name=New Window
+Exec=fakecomp --new %U
+
+[Desktop Action private]
+Name=Private
+Exec=fakecomp --private

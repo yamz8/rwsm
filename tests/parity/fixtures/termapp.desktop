@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal App
+Exec=fakecomp --tui
+Terminal=true

@@ -1,0 +1,60 @@
+# Command lines compared by ci.sh with cmp.sh, one per line, shell-quoted.
+# Lines starting with "app" run with a fake systemd-run first in PATH.
+
+# start: unit generation only (-o) and dry runs (-n)
+start -o fakecomp.desktop
+start -o -- fakecomp --flag "a b"
+start -o -N Fancy -C "A comment" fakecomp.desktop
+start -o -D Foo:Bar fakecomp.desktop
+start -o -e -D Foo fakecomp.desktop
+start -o -t fakecomp.desktop
+start -o -F fakecomp.desktop
+start -o -U home fakecomp.desktop
+start -o fakecomp.desktop:nonexistent-action
+start -n -g -1 -e -D Fake fakecomp.desktop
+start -n nonexistent.desktop
+start -o hidden.desktop
+start -o noexec.desktop
+start -o -- nonexistent-binary-xyz
+
+# stop and checks with no session running
+stop -n
+stop -n -r
+check is-active
+check is-active -v fakecomp.desktop
+check may-start -v
+check may-start -g 0
+
+# app
+app -- fakecomp
+app -- fakecomp --flag "a b" 'c d'
+app -- /usr/local/bin/fakecomp
+app viewer.desktop
+app viewer.desktop /a "/b c"
+app urlview.desktop https://example.com/x?y=1
+app fieldcodes.desktop /file
+app actions.desktop:new /u1 /u2
+app actions.desktop:private
+app actions.desktop:missing
+app termapp.desktop
+app hidden.desktop
+app noexec.desktop
+app nonexistent.desktop
+app -- nonexistent-binary-xyz
+app -t service -- fakecomp
+app -t service -S out -- fakecomp
+app -t service -S both viewer.desktop
+app -s b -- fakecomp
+app -s s -- fakecomp
+app -s custom.slice -- fakecomp
+app -s bogus -- fakecomp
+app -a myname -- fakecomp
+app -u my-unit.scope -- fakecomp
+app -t service -u my-unit -- fakecomp
+app -d "custom description" -- fakecomp
+app -p CPUWeight=20 -p MemoryMax=1G -- fakecomp
+app -T
+app -T -- fakecomp --tui
+app -T --app-id=x --title=y -- fakecomp
+app -T viewer.desktop
+app -- "fakecomp with space"

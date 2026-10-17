@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Field Codes
+Icon=fc-icon
+Exec=fakecomp %i %c %k %%f "quoted arg" %f

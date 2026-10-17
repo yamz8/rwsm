@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Viewer
+GenericName=File Viewer
+Comment=Opens files
+Exec=fakecomp --view %F
+Icon=viewer
+MimeType=text/plain;
