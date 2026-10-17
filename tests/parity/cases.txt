@@ -58,3 +58,7 @@ app -T -- fakecomp --tui
 app -T --app-id=x --title=y -- fakecomp
 app -T viewer.desktop
 app -- "fakecomp with space"
+
+# aux actions refuse to run outside the user manager
+aux prepare-env fakecomp.desktop
+aux waitenv

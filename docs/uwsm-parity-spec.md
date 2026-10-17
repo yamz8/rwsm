@@ -1007,36 +1007,42 @@ The rwsm repo carries these templates and installs them unchanged.
 
 ## 12. Parity checklist
 
-Each item is to be closed by an implementation plus a test, unit or
-integration (in a systemd user session container).
+Every item is implemented. The table says what checks it. "Parity" means
+`tests/parity/ci.sh`, run by the `parity` CI job against Python uwsm:
+`cases.txt` lines through `cmp.sh` (output, exit code and generated units),
+the generated desktop entries, the live session (`live.sh`, with
+`/usr/bin/uwsm` pointing at each implementation in turn) and the app daemon
+(`daemon.sh`). "Partial" names what is not compared automatically.
 
-- [ ] P-NAME: binary and path naming (§1)
-- [ ] P-CLI-*: every flag, default and env preset (§2), including P-CLI-STOP-R and P-CLI-APP-T
-- [ ] P-AUX-GUARD (§2.7)
-- [ ] str2bool_plus, XDG paths (§3)
-- [ ] P-START-GST, P-START-ACTIVE, P-START-SIGHANDLER and the start sequence (§4.1)
-- [ ] P-MAINARG, P-SELF-ENTRY, P-DESKTOP-NAMES, bin_id (§4.2)
-- [ ] P-UNIT-BYTES: drop-ins, timeout drop-ins, tweaks, rung cleanup, marks (§4.3–4.5)
-- [ ] select and default-id (§4.6)
-- [ ] stop and `-r` (§4.7)
-- [ ] finalize and notify (§4.8)
-- [ ] P-AUTOREADY (§4.11)
-- [ ] waitpid, waitenv (§4.12–4.13, §8.5)
-- [ ] P-ENV-FILTER, Varnames sets and modifiers (§5.1–5.2)
-- [ ] prepare_env, including P-ENV-SESSION and the aux vars file (§5.3)
-- [ ] set/unset of the activation env with the dbus-broker branch (§5.4)
-- [ ] cleanup_env, cleanup list (§5.5–5.6)
-- [ ] P-RUNTIME-FILES (§5.7)
-- [ ] Desktop entry parser, P-ENTRY-VALIDATE, P-ENTRY-EXEC (§6.1)
-- [ ] P-APP, P-APP-UNITNAME, systemd-run argv (§6.2)
-- [ ] P-FIELDCODES (§6.3)
-- [ ] P-TERMINAL, including the negative cache (§6.4)
-- [ ] P-APPDAEMON wire protocol (§6.5)
-- [ ] P-PLUGINS: shipped scripts unchanged (§7)
-- [ ] simple_systemd_escape, wait_for_unit, is_active (§8.1–8.4)
-- [ ] P-MAYSTART (§8.6), is-active (§8.7)
-- [ ] Static units installed (§9)
-- [ ] P-OUTPUT: colors, journal prefixes, syslog, notifications (§10)
+| Item | Status | Checked by |
+|---|---|---|
+| P-NAME: binary and path naming (§1) | Done | `arch-package` CI job (file list vs Arch's uwsm), `config` and `units` tests |
+| P-CLI-*: flags, defaults, env presets (§2), P-CLI-STOP-R, P-CLI-APP-T | Done | 14 `cli` tests; parity `start`/`stop`/`app` lines. Argument errors are worded by clap (quirks note) |
+| P-AUX-GUARD (§2.7) | Done | Parity `aux` lines |
+| str2bool_plus, XDG paths (§3) | Done | `misc::bool_plus`, `xdg` tests |
+| P-START-GST, P-START-ACTIVE, P-START-SIGHANDLER, start sequence (§4.1) | Partial | Parity `start -o`/`-n` lines and the live session; signal handling during start is not exercised |
+| P-MAINARG, P-SELF-ENTRY, P-DESKTOP-NAMES, bin_id (§4.2) | Done | `comp` tests; parity `start` lines with `-D`, `-e`, `-N`, `-C`, entries and executables |
+| P-UNIT-BYTES: drop-ins, timeouts, tweaks, rungs, marks (§4.3–4.5) | Done | `units::dropins_match_uwsm_bytes`; parity `start -o` lines diff the unit files (`-t`, `-F`, `-U home`) |
+| select and default-id (§4.6) | Partial | `select::shorten_matches_textwrap`; the whiptail menu is not driven automatically |
+| stop and `-r` (§4.7) | Partial | Parity `stop -n [-r]` and the live stop; `-r` removing files is not compared |
+| finalize and notify (§4.8) | Done | Live session (the stand-in compositor calls `uwsm finalize`) |
+| P-AUTOREADY (§4.11) | Done | Live session |
+| waitpid, waitenv (§4.12–4.13, §8.5) | Done | Live session (`wayland-session-waitenv.service`, bindpid unit) |
+| P-ENV-FILTER, Varnames sets and modifiers (§5.1–5.2) | Done | `varnames` tests; live activation environment |
+| prepare_env, P-ENV-SESSION, aux vars file (§5.3) | Done | `env` tests; live activation environment and runtime files |
+| Activation env set/unset, dbus-broker branch (§5.4) | Partial | Live session on dbus-daemon; the dbus-broker branch is not exercised in CI |
+| cleanup_env, cleanup list (§5.5–5.6) | Done | Live `cleanup.list` and environment after stop |
+| P-RUNTIME-FILES (§5.7) | Done | Live runtime file list |
+| Desktop entry parser, P-ENTRY-VALIDATE, P-ENTRY-EXEC (§6.1) | Done | `desktop_entry` tests (expected errors from pyxdg 0.28); 45 generated entries in parity; all 92 entries of an Omarchy install compared by hand (docs/real-hardware-test.md) |
+| P-APP, P-APP-UNITNAME, systemd-run argv (§6.2) | Done | 32 parity `app` lines with a fake `systemd-run`; `app::unit_name_trimming` |
+| P-FIELDCODES (§6.3) | Done | `app::field_codes`; parity entries with field codes |
+| P-TERMINAL, negative cache (§6.4) | Partial | `app::terminal_list_lines`; parity `app -T` lines; the negative cache file is not compared |
+| P-APPDAEMON wire protocol (§6.5) | Done | Parity daemon run; `app::daemon_replies_match_uwsm` |
+| P-PLUGINS: shipped scripts unchanged (§7) | Done | `tools/sync-upstream.sh` (byte comparison with the upstream tag) |
+| simple_systemd_escape, wait_for_unit, is_active (§8.1–8.4) | Done | `escape` tests; live session |
+| P-MAYSTART (§8.6), is-active (§8.7) | Done | Parity `check` lines; live `check is-active -v` |
+| Static units installed (§9) | Done | `arch-package` CI job; `tools/sync-upstream.sh` |
+| P-OUTPUT: colors, journal prefixes, syslog, notifications (§10) | Partial | Parity compares output with journal prefixes (stdout is not a TTY); colors, syslog and desktop notifications are not compared |
 
 ## 13. Suggested crate layout (input for step 2)
 ```

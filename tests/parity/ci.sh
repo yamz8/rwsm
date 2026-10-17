@@ -54,9 +54,16 @@ for id in $edge; do
   check "app $id" env SHIM="$shim" "$HERE/cmp.sh" app "$id" /x
 done
 
-# Whole session with the stand-in compositor. Logs and the journal hold PIDs
-# and timestamps, so only the state files are compared.
+check "user manager still on the bus" systemctl --user show-environment
+
+# Whole session with the stand-in compositor. Units and the compositor call
+# /usr/bin/uwsm (aux exec, finalize, readiness), so it points at Python uwsm
+# for the pyuwsm run. Logs and the journal hold PIDs and timestamps, so only
+# the state files are compared.
+mv /usr/bin/uwsm /usr/bin/uwsm.rwsm
+printf '#!/bin/sh\nexec pyuwsm "$@"\n' > /usr/bin/uwsm && chmod +x /usr/bin/uwsm
 "$HERE/live.sh" pyuwsm
+mv -f /usr/bin/uwsm.rwsm /usr/bin/uwsm
 "$HERE/live.sh" uwsm
 check "live: session started" grep -q 'wayland-wm@fakecomp.desktop.service active' \
   "$PARITY_OUT/live-uwsm-fakecomp/units"
