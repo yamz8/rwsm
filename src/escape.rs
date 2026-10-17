@@ -1,6 +1,6 @@
 //! String escaping helpers that must match uwsm byte for byte.
 
-use crate::nonprintable;
+use crate::unicode_tables;
 
 /// Escapes a string the way uwsm's `simple_systemd_escape` does (spec §8.1).
 ///
@@ -89,8 +89,13 @@ pub fn py_repr(s: &str) -> String {
 
 /// Python's `str.isprintable()` for one character.
 fn is_py_printable(c: char) -> bool {
+    !in_ranges(unicode_tables::NONPRINTABLE, c)
+}
+
+/// Whether `c` falls in one of the sorted, inclusive `ranges`.
+pub fn in_ranges(ranges: &[(u32, u32)], c: char) -> bool {
     let cp = c as u32;
-    nonprintable::RANGES
+    ranges
         .binary_search_by(|&(lo, hi)| {
             if hi < cp {
                 std::cmp::Ordering::Less
@@ -100,7 +105,20 @@ fn is_py_printable(c: char) -> bool {
                 std::cmp::Ordering::Equal
             }
         })
-        .is_err()
+        .is_ok()
+}
+
+/// An environment value as Python prints it: undecodable bytes become
+/// surrogates (surrogateescape), which stderr writes as `\udcXX`.
+pub fn py_env_display(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len());
+    for chunk in bytes.utf8_chunks() {
+        out.push_str(chunk.valid());
+        for b in chunk.invalid() {
+            out.push_str(&format!("\\udc{b:02x}"));
+        }
+    }
+    out
 }
 
 /// Formats a list of strings like Python's `repr()` of a list.
@@ -187,5 +205,7 @@ mod tests {
         assert_eq!(py_repr("\u{10ffff}\u{1f600}"), "'\\U0010ffff😀'");
         assert_eq!(py_repr_list(&["_", "x=y"]), "['_', 'x=y']");
         assert_eq!(py_repr_list(&[""]), "['']");
+        assert_eq!(py_env_display(b"a\xffb\xc3"), "a\\udcffb\\udcc3");
+        assert_eq!(py_env_display("é".as_bytes()), "é");
     }
 }

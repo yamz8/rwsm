@@ -1,6 +1,7 @@
 //! Desktop entry parsing and checks (spec §6.1), covering what uwsm uses from
 //! pyxdg's `DesktopEntry` plus uwsm's own value expansion and Exec tokenizer.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,6 +26,8 @@ enum Check {
     Bool,
     /// Parses as a float.
     Numeric,
+    /// Compiles as a Python regular expression.
+    Regex,
 }
 
 /// One row of pyxdg's `DesktopEntry.checkKey` table.
@@ -111,8 +114,7 @@ const KEYS: &[KeySpec] = &[
     key("MapNotify", Check::Str),
     key("SwallowTitle", Check::None).localized(),
     key("SwallowExec", Check::Str),
-    // checked as a regex by pyxdg; any value is accepted here
-    key("FilePattern", Check::None).list(),
+    key("FilePattern", Check::Regex).list(),
     key("SortOrder", Check::Str).list(),
 ];
 
@@ -133,8 +135,9 @@ pub struct DesktopEntry {
     /// Group name to key/value pairs, in file order.
     groups: Vec<(String, Vec<(String, String)>)>,
     /// The main group (pyxdg's `defaultGroup`): `Desktop Entry`, or
-    /// `KDE Desktop Entry` in old files.
-    main: String,
+    /// `KDE Desktop Entry` in old files. [`DesktopEntry::action_keys`]
+    /// switches it the way uwsm does.
+    main: RefCell<String>,
 }
 
 impl DesktopEntry {
@@ -211,8 +214,12 @@ impl DesktopEntry {
         Ok(Self {
             path: path.to_path_buf(),
             groups,
-            main: main.to_string(),
+            main: RefCell::new(main.to_string()),
         })
+    }
+
+    fn main(&self) -> String {
+        self.main.borrow().clone()
     }
 
     fn group(&self, group: &str) -> Option<&[(String, String)]> {
@@ -235,7 +242,7 @@ impl DesktopEntry {
     }
 
     pub fn get_raw(&self, key: &str) -> Option<&str> {
-        self.get_raw_in(&self.main, key)
+        self.get_raw_in(&self.main(), key)
     }
 
     pub fn has_key(&self, key: &str) -> bool {
@@ -261,22 +268,22 @@ impl DesktopEntry {
     }
 
     pub fn name(&self) -> &str {
-        self.get_localized_in(&self.main, "Name")
+        self.get_localized_in(&self.main(), "Name")
             .unwrap_or_default()
     }
 
     pub fn generic_name(&self) -> &str {
-        self.get_localized_in(&self.main, "GenericName")
+        self.get_localized_in(&self.main(), "GenericName")
             .unwrap_or_default()
     }
 
     pub fn comment(&self) -> &str {
-        self.get_localized_in(&self.main, "Comment")
+        self.get_localized_in(&self.main(), "Comment")
             .unwrap_or_default()
     }
 
     pub fn icon(&self) -> &str {
-        self.get_localized_in(&self.main, "Icon")
+        self.get_localized_in(&self.main(), "Icon")
             .unwrap_or_default()
     }
 
@@ -328,7 +335,8 @@ impl DesktopEntry {
                 errors.push(e);
             }
         };
-        let main = self.group(&self.main).unwrap_or_default();
+        let main_group = self.main();
+        let main = self.group(&main_group).unwrap_or_default();
         let has = |k: &str| main.iter().any(|(key, _)| key == k);
         if !has("Type") {
             push("Key 'Type' is missing".into());
@@ -341,7 +349,7 @@ impl DesktopEntry {
             let action_group = group.strip_prefix("Desktop Action ").is_some_and(|a| {
                 !a.is_empty() && a.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
             });
-            if !(*group == self.main
+            if !(*group == main_group
                 || action_group
                 || (group.starts_with("X-") && group.is_ascii()))
             {
@@ -405,11 +413,13 @@ fn check_key(key: &str, value: &str, entry_type: &str, push: &mut impl FnMut(Str
             Check::Str => v.is_ascii(),
             Check::Bool => matches!(v.as_str(), "true" | "false" | "1" | "0"),
             Check::Numeric => is_python_float(&v),
+            Check::Regex => crate::pyre::compiles(&v),
         };
         if !valid {
             let kind = match check {
                 Check::Bool => "boolean",
                 Check::Numeric => "numeric",
+                Check::Regex => "regex",
                 _ => "string",
             };
             push(format!("'{v}' is not a valid {kind}"));
@@ -459,41 +469,43 @@ fn is_x_key(key: &str) -> bool {
 /// pyxdg's `IniFile.getList`: splits on unescaped `;`, else `|`, else `,`,
 /// and drops one trailing empty item. Escapes stay as written.
 fn pyxdg_list(value: &str) -> Vec<String> {
-    let unescaped = |sep: char| {
-        let mut prev = None;
-        value.chars().any(|c| {
-            let hit = c == sep && prev != Some('\\');
-            prev = Some(c);
-            hit
-        })
-    };
-    let Some(sep) = [';', '|', ','].into_iter().find(|&c| unescaped(c)) else {
+    const SEPARATORS: [char; 3] = [';', '|', ','];
+    // byte offsets of each separator where no backslash precedes it
+    let mut cuts: [Vec<usize>; 3] = Default::default();
+    let mut prev = None;
+    for (i, c) in value.char_indices() {
+        if prev != Some('\\')
+            && let Some(k) = SEPARATORS.iter().position(|&s| s == c)
+        {
+            cuts[k].push(i);
+        }
+        prev = Some(c);
+    }
+    let Some(cuts) = cuts.into_iter().find(|c| !c.is_empty()) else {
         return if value.is_empty() {
             Vec::new()
         } else {
             vec![value.to_string()]
         };
     };
-    let mut items = vec![String::new()];
-    let mut prev = None;
-    for c in value.chars() {
-        if c == sep && prev != Some('\\') {
-            items.push(String::new());
-        } else {
-            items.last_mut().unwrap().push(c);
-        }
-        prev = Some(c);
+    let mut items = Vec::with_capacity(cuts.len() + 1);
+    let mut start = 0;
+    for cut in cuts {
+        items.push(value[start..cut].to_string());
+        start = cut + 1;
     }
+    items.push(value[start..].to_string());
     if items.last().is_some_and(String::is_empty) {
         items.pop();
     }
     items
 }
 
-/// Whether Python's `float()` accepts the string.
+/// Whether Python's `float()` accepts the string. Like Python, it first
+/// turns any Unicode decimal digit into its ASCII digit.
 fn is_python_float(s: &str) -> bool {
-    let t = py_strip(s);
-    let chars: Vec<char> = t.chars().collect();
+    let chars: Vec<char> = py_strip(s).chars().map(ascii_digit).collect();
+    let t: String = chars.iter().collect();
     // an underscore is only allowed between two digits
     let underscores_ok = chars.iter().enumerate().all(|(i, &c)| {
         c != '_'
@@ -503,6 +515,16 @@ fn is_python_float(s: &str) -> bool {
     });
     let t = t.replace('_', "");
     underscores_ok && !t.is_empty() && t.parse::<f64>().is_ok()
+}
+
+/// The ASCII digit for a Unicode decimal digit, `c` itself otherwise.
+fn ascii_digit(c: char) -> char {
+    let cp = c as u32;
+    crate::unicode_tables::DECIMAL_DIGITS
+        .iter()
+        .find(|&&(zero, nine)| (zero..=nine).contains(&cp))
+        .and_then(|&(zero, _)| char::from_digit(cp - zero, 10))
+        .unwrap_or(c)
 }
 
 /// Python's `str.strip()`: Unicode whitespace plus the separators
@@ -649,17 +671,17 @@ impl DesktopEntry {
                 self.path.display()
             );
         }
-        let group = format!("Desktop Action {action}");
-        out.name = expand_str(self.get_localized_in(&group, "Name").unwrap_or_default());
-        out.exec = tokenize_exec(&expand_str(
-            self.get_raw_in(&group, "Exec").unwrap_or_default(),
-        ))?;
-        if let Some(icon) = self
-            .get_localized_in(&group, "Icon")
-            .filter(|i| !i.is_empty())
-        {
-            out.icon = icon.to_string();
+        // uwsm points pyxdg's defaultGroup at the action group and afterwards
+        // at "Desktop Entry", even in [KDE Desktop Entry] files, whose main
+        // keys then read as empty (quirk Q13). An Exec error in between
+        // leaves it on the action group.
+        self.main.replace(format!("Desktop Action {action}"));
+        out.name = expand_str(self.name());
+        out.exec = tokenize_exec(&expand_str(self.exec()))?;
+        if !self.icon().is_empty() {
+            out.icon = self.icon().to_string();
         }
+        self.main.replace(MAIN_GROUPS[0].to_string());
         Ok(out)
     }
 
@@ -934,6 +956,13 @@ mod tests {
             ("", &[]),
             ("x", &["x"]),
             ("a\\,b,c", &["a\\,b", "c"]),
+            ("a\\;b|c", &["a\\;b", "c"]),
+            (";", &[""]),
+            ("|x|", &["", "x"]),
+            (",,", &["", ""]),
+            ("é;ü", &["é", "ü"]),
+            ("a\\\\;b", &["a\\\\;b"]),
+            ("\\|a,b", &["\\|a", "b"]),
         ] {
             assert_eq!(pyxdg_list(value), expected, "{value:?}");
         }
@@ -952,6 +981,14 @@ mod tests {
             both.validation_errors(),
             vec!["Invalid Group name: KDE Desktop Entry"]
         );
+        // quirk Q13: after an action is read, lookups go to "Desktop Entry"
+        let kde = entry(
+            "[KDE Desktop Entry]\nType=Application\nName=K\nExec=sh\nActions=x;\n\
+             [Desktop Action x]\nName=X\nExec=sh\n",
+        );
+        kde.check_basic(Some("x")).unwrap();
+        assert_eq!(kde.name(), "");
+        assert!(kde.action_keys(Some("x")).is_err());
         let cr = entry("[Desktop Entry]\rType=Application\rName=C\r\nExec=sh\n");
         assert_eq!(cr.name(), "C");
         assert_eq!(cr.exec(), "sh");

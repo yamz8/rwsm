@@ -1004,7 +1004,7 @@ The rwsm repo carries these templates and installs them unchanged.
 | Q10 | `aux waitenv` declares its names with `type=list`, so any name passed on the command line becomes a list of characters and crashes the filter (the unit never passes names) | Fix: accept plain names |
 | Q11 | `-U home` creates the unit dir with `os.mkdir`, so `start` crashes with "No such file or directory" when `~/.config/systemd` does not exist yet | Fix: create missing parents |
 | Q12 | `app-daemon`: argparse exits on most bad args (unknown option, missing value), killing the daemon; the reply then comes from the restarted daemon via the `app_daemon_error` flag file | Fix: reply directly with the same `error 'Invalid arguments: <joined args>' 2` text and keep running |
-| Q13 | `entry_action_keys` restores `defaultGroup` to `Desktop Entry` after reading an action, even when the file's main group is `[KDE Desktop Entry]`, so later lookups in such a file see empty values | Fix: keep the file's real main group (only affects old KDE-header files launched with an action) |
+| Q13 | `entry_action_keys` restores `defaultGroup` to `Desktop Entry` after reading an action, even when the file's main group is `[KDE Desktop Entry]`, so later lookups in such a file see empty values | Keep for parity: such an action fails with `does not have action` in both (only old KDE-header files are affected) |
 
 ## 12. Parity checklist
 
@@ -1034,7 +1034,7 @@ the generated desktop entries, the live session (`live.sh`, with
 | Activation env set/unset, dbus-broker branch (§5.4) | Partial | Live session on dbus-daemon; the dbus-broker branch is not exercised in CI |
 | cleanup_env, cleanup list (§5.5–5.6) | Done | Live `cleanup.list` and environment after stop |
 | P-RUNTIME-FILES (§5.7) | Done | Live runtime file list |
-| Desktop entry parser, P-ENTRY-VALIDATE, P-ENTRY-EXEC (§6.1) | Done | `desktop_entry` tests (expected errors from pyxdg 0.28); 45 generated entries in parity; all 92 entries of an Omarchy install compared by hand (docs/real-hardware-test.md) |
+| Desktop entry parser, P-ENTRY-VALIDATE, P-ENTRY-EXEC (§6.1) | Done | `desktop_entry` tests (expected values from pyxdg 0.28); `FilePattern` regexes checked by `src/pyre.rs` against 3000 recorded `re.compile` results (300,000 random patterns agreed except unknown `\N{...}` names); 58 generated entries in parity; all installed entries of an Omarchy machine compared by hand (docs/real-hardware-test.md) |
 | P-APP, P-APP-UNITNAME, systemd-run argv (§6.2) | Done | 32 parity `app` lines with a fake `systemd-run`; `app::unit_name_trimming` |
 | P-FIELDCODES (§6.3) | Done | `app::field_codes`; parity entries with field codes |
 | P-TERMINAL, negative cache (§6.4) | Partial | `app::terminal_list_lines`; parity `app -T` lines; the negative cache file is not compared |

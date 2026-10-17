@@ -17,7 +17,7 @@ arch=(x86_64 aarch64)
 url="https://github.com/yamz8/rwsm"
 license=(MIT)
 depends=(gcc-libs glibc sh systemd util-linux)
-makedepends=(cargo git scdoc)
+makedepends=(cargo git python scdoc)
 optdepends=(
   'libnewt: for "uwsm start select"'
   'libnotify: for feedback from "uwsm app" commands or the fumon service'

@@ -3,6 +3,7 @@
 
 use std::collections::BTreeSet;
 use std::io::{Read, Write};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -14,7 +15,7 @@ use crate::comp::{CompInput, CompMode, fill_comp_globals};
 use crate::config::{PKG_LIBEXEC_DIR, SH_BIN};
 use crate::dbus::{Bus, Level};
 use crate::env::{self, Env};
-use crate::escape::{shlex_join, simple_systemd_escape};
+use crate::escape::{py_env_display, shlex_join, simple_systemd_escape};
 use crate::misc::str2bool_plus;
 use crate::units::UnitFiles;
 use crate::varnames::Varnames;
@@ -460,8 +461,8 @@ fn stop_wm(dry_run: bool) -> Result<bool> {
         return Ok(true);
     }
     output::normal(&format!("Found running compositor {unit}."));
-    let (mode, warn) =
-        cli::resolve_stop_job_mode(std::env::var("UWSM_STOP_JOB_MODE").ok().as_deref());
+    let value = std::env::var_os("UWSM_STOP_JOB_MODE").map(|v| py_env_display(v.as_bytes()));
+    let (mode, warn) = cli::resolve_stop_job_mode(value.as_deref());
     if let Some(w) = warn {
         output::warning(&w);
     }

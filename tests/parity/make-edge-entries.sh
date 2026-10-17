@@ -59,4 +59,9 @@ mk "[Desktop Entry]\rType=Application\rName=CR\rExec=fakecomp --cr\r"         # 
 mk "[Desktop Entry]\r\nType=Application\r\nName=CRLF\r\nExec=fakecomp --crlf\r\n"
 mk "${H}Exec=fakecomp\nInitialPreference=1_e5\n"                           # misplaced underscore
 mk "${H}Exec=fakecomp\x1f\nName[de]=\x1c x\n"                            # Python strips U+001C..U+001F
-echo edge-17.desktop:a edge-17.desktop:b edge-17.desktop:c edge-46.desktop:new edge-46.desktop:private
+mk "[KDE Desktop Entry]\nType=Application\nName=K\nExec=fakecomp --kde\nActions=x;\n[Desktop Action x]\nName=X\nExec=fakecomp --x\n" # 54: quirk Q13
+mk "${H}Exec=fakecomp\nFilePattern=[abc\n"                                 # 55: invalid regex
+mk "${H}Exec=fakecomp\nFilePattern=a+;b{2};(?P<n>x)(?P=n)\n"
+mk "${H}Exec=fakecomp\nFilePattern=(?<=a|bc)x\n"                           # variable-width look-behind
+mk "${H}Exec=fakecomp\nInitialPreference=１２\n"                           # Unicode digits
+echo edge-17.desktop:a edge-17.desktop:b edge-17.desktop:c edge-46.desktop:new edge-46.desktop:private edge-54.desktop:x

@@ -25,9 +25,12 @@ container), which matters most for `uwsm app` launches.
 
 ## Build and install
 
-Needs Rust 1.88 or newer, and `scdoc` for the man pages. At runtime it uses
-the same tools as uwsm: systemd, a POSIX `sh`, and optionally `whiptail` (for
-`select`) and `waitpid`.
+Needs Rust 1.88 or newer, and `scdoc` for the man pages. A few messages and
+checks follow Python's Unicode tables, so the build generates them with
+`/usr/bin/python3` (or `$RWSM_PYTHON`) when it exists and otherwise uses the
+copy in `src/unicode_tables.rs` (Python 3.14). At runtime it uses the same
+tools as uwsm: systemd, a POSIX `sh`, and optionally `whiptail` (for
+`select`) and `waitpid`. Python is not needed at runtime.
 
 ```sh
 make
