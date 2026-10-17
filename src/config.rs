@@ -46,9 +46,14 @@ pub const PROJECT_VERSION: &str = concat!(
 
 #[cfg(test)]
 mod tests {
+    /// Every copy of the matched uwsm version agrees (docs/upstream-sync.md).
     #[test]
-    fn upstream_version_matches_vendored_data() {
+    fn upstream_version_matches_everywhere() {
         let readme = include_str!("../data/README.md");
         assert!(readme.contains(concat!("v", upstream_version!(), " ")));
+        let pkgbuild = include_str!("../packaging/arch/PKGBUILD");
+        assert!(pkgbuild.contains(concat!("\n_upstream=", upstream_version!(), "\n")));
+        let ci = include_str!("../.github/workflows/ci.yml");
+        assert!(ci.contains(concat!("UWSM_REF: v", upstream_version!(), "\n")));
     }
 }
