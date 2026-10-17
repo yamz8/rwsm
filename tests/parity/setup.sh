@@ -21,7 +21,13 @@ chmod +x /usr/local/bin/pyuwsm
 install -m755 "$HERE/fakecomp" /usr/local/bin/fakecomp
 install -Dm644 "$HERE/fakecomp.desktop" /usr/share/wayland-sessions/fakecomp.desktop
 
-# buses, logind, journald and a user manager without systemd as PID 1
+# buses, logind, journald and a user manager without systemd as PID 1.
+# The user manager must not take over the session bus socket with its own
+# dbus.socket (Arch's dbus-broker-units ship one), so mask those units.
+mkdir -p /etc/systemd/user
+for u in dbus.socket dbus.service dbus-broker.service; do
+    ln -sf /dev/null /etc/systemd/user/$u
+done
 mkdir -p /run/systemd/system /var/run/dbus /run/user/0
 chmod 700 /run/user/0
 dbus-daemon --system --fork
