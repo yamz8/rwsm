@@ -129,10 +129,8 @@ impl Bus {
 
     fn get_property(&self, dest: &str, path: &str, iface: &str, prop: &str) -> Result<OwnedValue> {
         let props = self.proxy(dest, path, "org.freedesktop.DBus.Properties")?;
-        let value: OwnedValue = props
-            .call("Get", &(iface, prop))
-            .with_context(|| format!("Could not get property {iface}.{prop} of {path}"))?;
-        Ok(value)
+        // The bare D-Bus error, as uwsm prints it.
+        Ok(props.call("Get", &(iface, prop))?)
     }
 
     /// `Manager.Reload()`, returns the job path.
@@ -192,10 +190,7 @@ impl Bus {
         prop: &str,
         skip_generic: bool,
     ) -> Result<OwnedValue> {
-        let path: OwnedObjectPath = self
-            .manager()?
-            .call("GetUnit", &(unit,))
-            .with_context(|| format!("Could not get unit {unit}"))?;
+        let path: OwnedObjectPath = self.manager()?.call("GetUnit", &(unit,))?;
         if !skip_generic
             && let Ok(v) = self.get_property(
                 SYSTEMD,
@@ -303,9 +298,7 @@ impl Bus {
 
     pub fn get_session_property(&self, session_id: &str, prop: &str) -> Result<OwnedValue> {
         let proxy = self.proxy(LOGIN, LOGIN_PATH, LOGIN_MANAGER)?;
-        let path: OwnedObjectPath = proxy
-            .call("GetSession", &(session_id,))
-            .with_context(|| format!("Could not get login session {session_id}"))?;
+        let path: OwnedObjectPath = proxy.call("GetSession", &(session_id,))?;
         self.get_property(LOGIN, path.as_str(), "org.freedesktop.login1.Session", prop)
     }
 

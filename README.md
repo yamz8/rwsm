@@ -51,6 +51,8 @@ should be restarted once so the units pick up the new binary.
 
 Differences you might notice, all listed in the spec's quirks table:
 - Argument errors are worded by clap rather than argparse (exit code 2 in both).
+- When the session bus cannot be reached at all, the error text comes from
+  zbus rather than libdbus.
 - A few uwsm crashes are fixed instead of reproduced, for example `start -U home`
   without `~/.config/systemd`, `check may-start` hitting a D-Bus error, and
   the app daemon exiting on bad arguments.
