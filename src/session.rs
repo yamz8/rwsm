@@ -460,22 +460,15 @@ fn stop_wm(dry_run: bool) -> Result<bool> {
         return Ok(true);
     }
     output::normal(&format!("Found running compositor {unit}."));
-    let job = bus.stop_unit(unit, &stop_job_mode())?;
+    let (mode, warn) =
+        cli::resolve_stop_job_mode(std::env::var("UWSM_STOP_JOB_MODE").ok().as_deref());
+    if let Some(w) = warn {
+        output::warning(&w);
+    }
+    let job = bus.stop_unit(unit, mode)?;
     bus.wait_for_job(&job)?;
     output::ok("Sent stop job.");
     Ok(true)
-}
-
-/// Job mode for stopping the compositor unit, from `UWSM_STOP_JOB_MODE`.
-fn stop_job_mode() -> String {
-    let mode = std::env::var("UWSM_STOP_JOB_MODE").unwrap_or_else(|_| "replace".into());
-    if ["fail", "replace", "replace-irreversibly"].contains(&mode.as_str()) {
-        return mode;
-    }
-    output::warning(&format!(
-        "Expected fail|replace|replace-irreversibly from UWSM_STOP_JOB_MODE, got \"{mode}\", ignored and set to \"replace\"."
-    ));
-    "replace".into()
 }
 
 fn exec_systemd_notify(args: &[&str]) -> anyhow::Error {
